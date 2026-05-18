@@ -27,6 +27,7 @@ class CIRLightningModule(pl.LightningModule if pl else torch.nn.Module):
         super().__init__()
         self.cfg = cfg
         self.model = ConTextCIR(cfg.model)
+        self.model.train()
         if hasattr(self, "save_hyperparameters"):
             self.save_hyperparameters({"config": config_to_dict(cfg)})
 
@@ -90,25 +91,41 @@ class CIRLightningModule(pl.LightningModule if pl else torch.nn.Module):
 
     def training_step(self, batch: dict[str, Any], batch_idx: int):
         losses = self._compute_losses(batch)
-        self.log("train/loss_total", losses["loss_total"], on_step=True, on_epoch=True, prog_bar=True)
-        self.log("train/loss_cont", losses["loss_cont"], on_step=True, on_epoch=True)
-        self.log("train/loss_cc", losses["loss_cc"], on_step=True, on_epoch=True)
+        batch_size = int(batch["reference_image"].shape[0])
+        self.log(
+            "train/loss_total",
+            losses["loss_total"],
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            batch_size=batch_size,
+        )
+        self.log("train/loss_cont", losses["loss_cont"], on_step=True, on_epoch=True, batch_size=batch_size)
+        self.log("train/loss_cc", losses["loss_cc"], on_step=True, on_epoch=True, batch_size=batch_size)
         lr = self.trainer.optimizers[0].param_groups[0]["lr"] if self.trainer.optimizers else 0.0
-        self.log("lr", lr, on_step=True, on_epoch=False)
+        self.log("lr", lr, on_step=True, on_epoch=False, batch_size=batch_size)
         return losses["loss_total"]
 
     def validation_step(self, batch: dict[str, Any], batch_idx: int):
         if batch["target_image"] is None:
             return None
         losses = self._compute_losses(batch)
-        self.log("val/loss", losses["loss_total"], on_step=False, on_epoch=True, prog_bar=True)
+        batch_size = int(batch["reference_image"].shape[0])
+        self.log(
+            "val/loss",
+            losses["loss_total"],
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            batch_size=batch_size,
+        )
         return losses
 
     def on_before_optimizer_step(self, optimizer) -> None:
         if not hasattr(self, "log"):
             return
         norm = torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=float("inf"))
-        self.log("train/grad_norm", norm, on_step=True, on_epoch=False)
+        self.log("train/grad_norm", norm, on_step=True, on_epoch=False, batch_size=1)
 
     def on_fit_start(self) -> None:
         datamodule = getattr(self.trainer, "datamodule", None)
@@ -149,7 +166,12 @@ class CIRLightningModule(pl.LightningModule if pl else torch.nn.Module):
         )
         for key, value in result.metrics.items():
             metric_name = f"val/{key}" if not key.startswith("num_") else key
-            self.log(metric_name, value, prog_bar=key in {"recall@10", "recall_subset@1"})
+            self.log(
+                metric_name,
+                value,
+                prog_bar=key in {"recall@10", "recall_subset@1"},
+                batch_size=1,
+            )
 
     def configure_optimizers(self):
         optimizer = AdamW(

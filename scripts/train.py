@@ -34,6 +34,8 @@ def main() -> None:
     accelerator = cfg.train.accelerator
     devices = cfg.train.devices
     precision = cfg.train.precision
+    if torch.cuda.is_available() and hasattr(torch, "set_float32_matmul_precision"):
+        torch.set_float32_matmul_precision("medium")
     if accelerator == "gpu" and not torch.cuda.is_available():
         print("WARNING: GPU requested but CUDA is unavailable; falling back to CPU.")
         accelerator = "cpu"

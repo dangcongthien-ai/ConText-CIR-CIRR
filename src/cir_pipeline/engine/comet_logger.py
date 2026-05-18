@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import os
 import warnings
 from pathlib import Path
@@ -43,14 +44,35 @@ def build_lightning_logger(cfg: AppConfig):
             "logger.name=comet but COMET_API_KEY is missing; training will continue without COMET."
         )
         return False
-    return CometLogger(
-        api_key=api_key,
-        workspace=workspace,
-        project_name=project_name,
-        save_dir=cfg.project.output_dir,
-        offline=cfg.logger.offline,
-        experiment_name=cfg.logger.experiment_name,
-    )
+    return CometLogger(**_comet_logger_kwargs(CometLogger, cfg, api_key, workspace, project_name))
+
+
+def _comet_logger_kwargs(
+    comet_logger_cls: Any,
+    cfg: AppConfig,
+    api_key: str | None,
+    workspace: str | None,
+    project_name: str,
+) -> dict[str, Any]:
+    parameters = inspect.signature(comet_logger_cls).parameters
+    kwargs: dict[str, Any] = {"api_key": api_key, "workspace": workspace}
+    if "project" in parameters:
+        kwargs["project"] = project_name
+    else:
+        kwargs["project_name"] = project_name
+    if "name" in parameters:
+        kwargs["name"] = cfg.logger.experiment_name
+    else:
+        kwargs["experiment_name"] = cfg.logger.experiment_name
+    if "online" in parameters:
+        kwargs["online"] = not cfg.logger.offline
+    else:
+        kwargs["offline"] = cfg.logger.offline
+    if "offline_directory" in parameters:
+        kwargs["offline_directory"] = cfg.project.output_dir
+    else:
+        kwargs["save_dir"] = cfg.project.output_dir
+    return kwargs
 
 
 def log_config(logger: Any, cfg: AppConfig) -> None:
