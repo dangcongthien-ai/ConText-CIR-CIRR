@@ -27,7 +27,7 @@ def test_retrieval_loss_accepts_query_negatives():
 def test_text_cc_returns_zero_without_valid_phrases():
     attn = [torch.rand(2, 2, 3, 4)]
     loss = text_concept_consistency_loss(attn, attn, [], [], [], epsilon=0.05)
-    assert loss.item() == 0.0
+    assert torch.isclose(loss, loss.new_tensor(0.0)).item()
 
 
 def test_text_cc_positive_for_different_attention_maps():

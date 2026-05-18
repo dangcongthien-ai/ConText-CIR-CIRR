@@ -51,19 +51,17 @@ class NounPhraseParser:
         text = text.strip()
         if not text:
             return []
-        if self.backend in {"auto", "stanza"}:
-            phrases = self._extract_stanza(text)
-            if phrases:
+        for backend, extractor in self._backend_extractors():
+            phrases = extractor(text)
+            if phrases or self.backend == backend:
                 return phrases[: self.max_phrases]
-            if self.backend == "stanza":
-                return []
-        if self.backend in {"auto", "nltk"}:
-            phrases = self._extract_nltk(text)
-            if phrases:
-                return phrases[: self.max_phrases]
-            if self.backend == "nltk":
-                return []
         return self._extract_regex(text)[: self.max_phrases]
+
+    def _backend_extractors(self):
+        if self.backend in {"auto", "stanza"}:
+            yield "stanza", self._extract_stanza
+        if self.backend in {"auto", "nltk"}:
+            yield "nltk", self._extract_nltk
 
     def _ensure_stanza(self):
         if self._stanza_failed:
@@ -96,22 +94,27 @@ class NounPhraseParser:
             doc = nlp(text)
             phrases: list[str] = []
             for sentence in doc.sentences:
-                tree = getattr(sentence, "constituency", None)
-                if tree is None:
-                    continue
-                queue = deque([tree])
-                while queue and len(phrases) < self.max_phrases:
-                    node = queue.popleft()
-                    label = getattr(node, "label", "")
-                    if label == "NP":
-                        phrase = self._tree_text(node)
-                        if phrase and phrase not in phrases:
-                            phrases.append(phrase)
-                    for child in getattr(node, "children", []) or []:
-                        queue.append(child)
+                self._append_sentence_noun_phrases(sentence, phrases)
             return phrases
         except Exception:  # pragma: no cover
             return []
+
+    def _append_sentence_noun_phrases(self, sentence, phrases: list[str]) -> None:
+        tree = getattr(sentence, "constituency", None)
+        if tree is None:
+            return
+        queue = deque([tree])
+        while queue and len(phrases) < self.max_phrases:
+            node = queue.popleft()
+            self._append_node_phrase(node, phrases)
+            queue.extend(getattr(node, "children", []) or [])
+
+    def _append_node_phrase(self, node, phrases: list[str]) -> None:
+        if getattr(node, "label", "") != "NP":
+            return
+        phrase = self._tree_text(node)
+        if phrase and phrase not in phrases:
+            phrases.append(phrase)
 
     def _tree_text(self, node) -> str:
         if hasattr(node, "leaf_labels"):
@@ -151,20 +154,25 @@ class NounPhraseParser:
         for token in tokens:
             lowered = token.lower()
             if lowered in FALLBACK_STOPWORDS:
-                if current:
-                    phrase = " ".join(current)
-                    if phrase.lower() not in FALLBACK_STOPWORDS and phrase not in phrases:
-                        phrases.append(phrase)
-                    current = []
+                self._flush_regex_phrase(current, phrases)
+                current = []
                 continue
             current.append(token)
-            if len(current) >= 3:
-                phrase = " ".join(current)
-                if phrase not in phrases:
-                    phrases.append(phrase)
-                current = current[-1:]
-        if current:
-            phrase = " ".join(current)
-            if phrase not in phrases:
-                phrases.append(phrase)
+            current = self._maybe_emit_long_regex_phrase(current, phrases)
+        self._flush_regex_phrase(current, phrases)
         return phrases
+
+    def _flush_regex_phrase(self, current: list[str], phrases: list[str]) -> None:
+        if not current:
+            return
+        phrase = " ".join(current)
+        if phrase.lower() not in FALLBACK_STOPWORDS and phrase not in phrases:
+            phrases.append(phrase)
+
+    def _maybe_emit_long_regex_phrase(self, current: list[str], phrases: list[str]) -> list[str]:
+        if len(current) < 3:
+            return current
+        phrase = " ".join(current)
+        if phrase not in phrases:
+            phrases.append(phrase)
+        return current[-1:]

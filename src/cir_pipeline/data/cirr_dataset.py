@@ -26,6 +26,21 @@ def _is_placeholder_caption(text: str) -> bool:
     return lowered in {"", "nothing worth mentioning", "covered in query"}
 
 
+def _caption_extend_values(caption_extend: Any) -> list[Any]:
+    if isinstance(caption_extend, dict):
+        return list(caption_extend.values())
+    if isinstance(caption_extend, list):
+        return caption_extend
+    return []
+
+
+def _clean_extended_caption(value: Any) -> str | None:
+    text = str(value or "").strip()
+    if not text or _is_placeholder_caption(text):
+        return None
+    return PLACEHOLDER_RE.sub("", text).strip()
+
+
 class CIRRDataset(Dataset):
     """CIRR samples resolved from image_splits plus captions, never folder scans."""
 
@@ -88,19 +103,43 @@ class CIRRDataset(Dataset):
 
         ext = self.ext_by_pairid.get(str(row.get("pairid")), {})
         caption_extend = ext.get("caption_extend") or {}
-        pieces: list[str] = []
-        if isinstance(caption_extend, dict):
-            values = caption_extend.values()
-        elif isinstance(caption_extend, list):
-            values = caption_extend
-        else:
-            values = []
-        for value in values:
-            text = str(value or "").strip()
-            if not text or _is_placeholder_caption(text):
-                continue
-            pieces.append(PLACEHOLDER_RE.sub("", text).strip())
+        pieces = [
+            cleaned
+            for value in _caption_extend_values(caption_extend)
+            if (cleaned := _clean_extended_caption(value))
+        ]
         return " ".join(pieces) if pieces else caption
+
+    def _should_skip_empty_caption(self, caption: str) -> bool:
+        return not caption and self.split == "train" and self.data_cfg.skip_empty_captions
+
+    def _names_are_valid(self, row: dict[str, Any], reference: str, target: Any) -> bool:
+        if reference not in self.image_splits:
+            warnings.warn(f"Skipping pair {row.get('pairid')}: unknown reference {reference}")
+            return False
+        if target is not None and str(target) not in self.image_splits:
+            warnings.warn(f"Skipping pair {row.get('pairid')}: unknown target {target}")
+            return False
+        return True
+
+    def _build_relative_sample(
+        self,
+        row: dict[str, Any],
+        caption: str,
+        reference: str,
+        target: Any,
+    ) -> dict[str, Any]:
+        img_set = row.get("img_set") or {}
+        members = img_set.get("members", []) if isinstance(img_set, dict) else []
+        return {
+            "pair_id": row.get("pairid"),
+            "reference_name": reference,
+            "target_name": str(target) if target is not None else None,
+            "target_soft": row.get("target_soft") or {},
+            "caption": caption,
+            "img_set": list(members),
+            "img_set_id": img_set.get("id") if isinstance(img_set, dict) else None,
+        }
 
     def _load_relative_samples(self) -> list[dict[str, Any]]:
         rows = self._load_captions()
@@ -112,31 +151,15 @@ class CIRRDataset(Dataset):
             caption = self._merged_caption(row)
             if not caption:
                 empty_count += 1
-                if self.split == "train" and self.data_cfg.skip_empty_captions:
+                if self._should_skip_empty_caption(caption):
                     skipped_count += 1
                     continue
 
             reference = str(row.get("reference"))
             target = row.get("target_hard")
-            if reference not in self.image_splits:
-                warnings.warn(f"Skipping pair {row.get('pairid')}: unknown reference {reference}")
+            if not self._names_are_valid(row, reference, target):
                 continue
-            if target is not None and str(target) not in self.image_splits:
-                warnings.warn(f"Skipping pair {row.get('pairid')}: unknown target {target}")
-                continue
-
-            img_set = row.get("img_set") or {}
-            members = img_set.get("members", []) if isinstance(img_set, dict) else []
-            sample = {
-                "pair_id": row.get("pairid"),
-                "reference_name": reference,
-                "target_name": str(target) if target is not None else None,
-                "target_soft": row.get("target_soft") or {},
-                "caption": caption,
-                "img_set": list(members),
-                "img_set_id": img_set.get("id") if isinstance(img_set, dict) else None,
-            }
-            samples.append(sample)
+            samples.append(self._build_relative_sample(row, caption, reference, target))
 
         if empty_count:
             warnings.warn(
