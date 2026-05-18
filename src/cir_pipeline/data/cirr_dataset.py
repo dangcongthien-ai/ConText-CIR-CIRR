@@ -17,6 +17,10 @@ from cir_pipeline.utils.io import normalize_rel_path, read_json
 SplitName = Literal["train", "val", "test1"]
 ModeName = Literal["relative", "gallery"]
 
+# CIRR contains a few legitimate high-resolution images. The loader resizes them
+# immediately through the transform, so PIL's decompression-bomb guard is noisy
+# for this trusted local dataset.
+Image.MAX_IMAGE_PIXELS = None
 
 PLACEHOLDER_RE = re.compile(r"^\s*\[cr\d+\]\s*", re.IGNORECASE)
 

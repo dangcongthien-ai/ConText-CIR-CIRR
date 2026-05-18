@@ -32,8 +32,8 @@ loss:
   use_query_image_negative: true
 
 train:
-  batch_size: 128
-  val_batch_size: 256
+  batch_size: 64
+  val_batch_size: 128
   max_epochs: 30
   learning_rate: 1.0e-5
   weight_decay: 1.0e-2

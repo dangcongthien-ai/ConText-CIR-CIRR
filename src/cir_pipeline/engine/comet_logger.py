@@ -55,20 +55,21 @@ def _comet_logger_kwargs(
     project_name: str,
 ) -> dict[str, Any]:
     parameters = inspect.signature(comet_logger_cls).parameters
+    accepts_kwargs = any(param.kind == inspect.Parameter.VAR_KEYWORD for param in parameters.values())
     kwargs: dict[str, Any] = {"api_key": api_key, "workspace": workspace}
-    if "project" in parameters:
+    if "project" in parameters or accepts_kwargs:
         kwargs["project"] = project_name
     else:
         kwargs["project_name"] = project_name
-    if "name" in parameters:
+    if "name" in parameters or accepts_kwargs:
         kwargs["name"] = cfg.logger.experiment_name
     else:
         kwargs["experiment_name"] = cfg.logger.experiment_name
-    if "online" in parameters:
+    if "online" in parameters or accepts_kwargs:
         kwargs["online"] = not cfg.logger.offline
     else:
         kwargs["offline"] = cfg.logger.offline
-    if "offline_directory" in parameters:
+    if "offline_directory" in parameters or accepts_kwargs:
         kwargs["offline_directory"] = cfg.project.output_dir
     else:
         kwargs["save_dir"] = cfg.project.output_dir
