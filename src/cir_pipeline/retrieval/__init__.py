@@ -1,0 +1,2 @@
+"""FAISS indexing and retrieval."""
+

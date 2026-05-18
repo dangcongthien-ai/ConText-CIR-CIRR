@@ -1,0 +1,17 @@
+torch
+torchvision
+pytorch-lightning
+transformers
+comet-ml
+faiss-cpu
+numpy
+pandas
+pillow
+pyyaml
+tqdm
+rich
+pydantic
+python-dotenv
+stanza
+nltk
+pytest

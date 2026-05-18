@@ -1,0 +1,26 @@
+.env
+*.pyc
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Local outputs
+outputs/*
+!outputs/.gitkeep
+checkpoints/*
+!checkpoints/.gitkeep
+lightning_logs/
+wandb/
+comet/
+
+# Large local data, kept read-only by this project
+CIRR/train/
+CIRR/dev/
+CIRR/test1/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
