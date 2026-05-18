@@ -2,6 +2,7 @@ torch
 torchvision
 pytorch-lightning
 transformers
+safetensors
 comet-ml
 faiss-cpu
 numpy

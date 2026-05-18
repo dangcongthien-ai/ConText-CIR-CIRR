@@ -26,6 +26,7 @@ class DataConfig:
     metadata_root: str = "CIRR/cirr"
     use_extended_captions: bool = False
     skip_empty_captions: bool = True
+    noun_phrase_backend: str = "regex"
     num_workers: int = 8
 
 
@@ -150,6 +151,8 @@ def validate_config(cfg: AppConfig) -> None:
         raise ValueError("model.num_heads must be >= 1.")
     if cfg.faiss.index_type not in {"flat_ip", "hnsw"}:
         raise ValueError("faiss.index_type must be 'flat_ip' or 'hnsw'.")
+    if cfg.data.noun_phrase_backend not in {"auto", "stanza", "nltk", "regex"}:
+        raise ValueError("data.noun_phrase_backend must be one of: auto, stanza, nltk, regex.")
 
 
 def config_to_dict(cfg: AppConfig) -> dict[str, Any]:

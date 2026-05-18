@@ -71,6 +71,10 @@ pip install -r requirements.txt
 If you want GPU FAISS, install a `faiss-gpu` build matching your CUDA setup
 instead of `faiss-cpu`.
 
+The CLIP backbone is loaded with `safetensors` to avoid unsafe `torch.load`
+paths in recent `transformers` versions. If you see a CVE-2025-32434 warning,
+run `pip install safetensors` or upgrade Torch to `>=2.6`.
+
 ## COMET
 
 No API key is hardcoded. The easiest setup is to copy the example env file:
@@ -197,9 +201,18 @@ CUDA OOM:
 Lower `train.batch_size`, `train.val_batch_size`, or use gradient accumulation
 by adding it to the Trainer in `scripts/train.py`.
 
+Stanza/NLTK warnings on Windows:
+The default config uses `data.noun_phrase_backend: "regex"` so smoke runs do not
+need NLP model downloads or writes to `AppData`. For better noun phrases, install
+the NLP resources and switch this value to `"auto"` or `"stanza"`.
+
 FAISS install issue:
 Use `pip install faiss-cpu` on CPU machines. For CUDA, install a compatible
 `faiss-gpu` package manually.
+
+Torch/Transformers CVE-2025-32434 load error:
+Install `safetensors` with `pip install safetensors`, then rerun training. The
+code requests `model.safetensors` from HuggingFace instead of `pytorch_model.bin`.
 
 Missing image path:
 Run `python scripts/inspect_cirr_dataset.py --config configs/cirr_context_cir.yaml`.

@@ -116,10 +116,19 @@ class CIRLightningModule(pl.LightningModule if pl else torch.nn.Module):
             return
         train_dataset = getattr(datamodule, "train_dataset", None)
         val_dataset = getattr(datamodule, "val_dataset", None)
+        metrics: dict[str, float] = {}
         if train_dataset is not None:
-            self.log("num_samples_train", float(len(train_dataset)), prog_bar=False)
+            metrics["num_samples_train"] = float(len(train_dataset))
         if val_dataset is not None:
-            self.log("num_samples_val", float(len(val_dataset)), prog_bar=False)
+            metrics["num_samples_val"] = float(len(val_dataset))
+        self._log_direct_metrics(metrics)
+
+    def _log_direct_metrics(self, metrics: dict[str, float]) -> None:
+        if not metrics:
+            return
+        logger = getattr(self, "logger", None)
+        if logger and hasattr(logger, "log_metrics"):
+            logger.log_metrics(metrics, step=0)
 
     def on_validation_epoch_end(self) -> None:
         if getattr(self.trainer, "sanity_checking", False) or getattr(self.trainer, "fast_dev_run", False):

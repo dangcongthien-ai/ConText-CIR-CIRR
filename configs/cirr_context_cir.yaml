@@ -12,6 +12,7 @@ data:
   metadata_root: "CIRR/cirr"
   use_extended_captions: false
   skip_empty_captions: true
+  noun_phrase_backend: "regex"
   num_workers: 8
 
 model:

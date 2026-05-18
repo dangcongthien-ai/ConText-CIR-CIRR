@@ -22,7 +22,10 @@ class CIRRDataModule(pl.LightningDataModule if pl else object):
     def __init__(self, cfg: AppConfig) -> None:
         super().__init__()
         self.cfg = cfg
-        self.noun_parser = NounPhraseParser(max_phrases=cfg.loss.max_noun_phrases)
+        self.noun_parser = NounPhraseParser(
+            max_phrases=cfg.loss.max_noun_phrases,
+            backend=cfg.data.noun_phrase_backend,
+        )
         self.train_dataset: CIRRDataset | None = None
         self.val_dataset: CIRRDataset | None = None
         self.test_dataset: CIRRDataset | None = None
@@ -54,6 +57,7 @@ class CIRRDataModule(pl.LightningDataModule if pl else object):
             batch_size=self.cfg.train.batch_size,
             shuffle=True,
             num_workers=self.cfg.data.num_workers,
+            persistent_workers=self.cfg.data.num_workers > 0,
             pin_memory=True,
             collate_fn=cirr_collate,
             drop_last=True,
@@ -67,6 +71,7 @@ class CIRRDataModule(pl.LightningDataModule if pl else object):
             batch_size=self.cfg.train.val_batch_size,
             shuffle=False,
             num_workers=self.cfg.data.num_workers,
+            persistent_workers=self.cfg.data.num_workers > 0,
             pin_memory=True,
             collate_fn=cirr_collate,
         )

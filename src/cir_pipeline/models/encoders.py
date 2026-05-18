@@ -12,7 +12,7 @@ class CLIPTokenEncoders(nn.Module):
 
     def __init__(self, backbone: str) -> None:
         super().__init__()
-        self.clip = CLIPModel.from_pretrained(backbone)
+        self.clip = CLIPModel.from_pretrained(backbone, use_safetensors=True)
         self.tokenizer = CLIPTokenizerFast.from_pretrained(backbone)
         self.embedding_dim = int(self.clip.config.projection_dim)
 
