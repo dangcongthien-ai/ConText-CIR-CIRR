@@ -7,6 +7,12 @@ from torch import nn
 from transformers import CLIPModel, CLIPTokenizerFast
 
 
+def _last_hidden_state(outputs) -> torch.Tensor:
+    if hasattr(outputs, "last_hidden_state"):
+        return outputs.last_hidden_state
+    return outputs[0]
+
+
 class CLIPTokenEncoders(nn.Module):
     """Expose CLIP image and text token embeddings in the shared CLIP space."""
 
@@ -28,8 +34,8 @@ class CLIPTokenEncoders(nn.Module):
         return encoded
 
     def encode_image_tokens(self, images: torch.Tensor) -> torch.Tensor:
-        outputs = self.clip.vision_model(pixel_values=images, return_dict=True)
-        tokens = outputs.last_hidden_state
+        outputs = self.clip.vision_model(pixel_values=images)
+        tokens = _last_hidden_state(outputs)
         return self.clip.visual_projection(tokens)
 
     def encode_text_tokens(self, texts: list[str], device: torch.device | str) -> tuple[torch.Tensor, torch.Tensor]:
@@ -37,7 +43,6 @@ class CLIPTokenEncoders(nn.Module):
         outputs = self.clip.text_model(
             input_ids=encoded["input_ids"],
             attention_mask=encoded["attention_mask"],
-            return_dict=True,
         )
-        tokens = self.clip.text_projection(outputs.last_hidden_state)
+        tokens = self.clip.text_projection(_last_hidden_state(outputs))
         return tokens, encoded["attention_mask"].bool()
