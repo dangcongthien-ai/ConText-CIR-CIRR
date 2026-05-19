@@ -13,21 +13,26 @@ def retrieval_contrastive_loss(
     temperature: float = 0.07,
     use_query_image_negative: bool = True,
 ) -> torch.Tensor:
-    """InfoNCE over in-batch targets plus optional query-image negatives."""
+    """Symmetric InfoNCE with optional query-image negatives."""
 
-    logits = query_embeddings @ target_embeddings.t()
+    query_to_target = query_embeddings @ target_embeddings.t()
     if use_query_image_negative and query_negative_embeddings is not None:
         neg_logits = query_embeddings @ query_negative_embeddings.t()
-        logits = torch.cat([logits, neg_logits], dim=1)
-    logits = logits / temperature
+        query_to_target = torch.cat([query_to_target, neg_logits], dim=1)
+    query_to_target = query_to_target / temperature
+    target_to_query = (target_embeddings @ query_embeddings.t()) / temperature
     labels = torch.arange(query_embeddings.shape[0], device=query_embeddings.device)
-    return F.cross_entropy(logits, labels)
+    loss_query = F.cross_entropy(query_to_target, labels)
+    loss_target = F.cross_entropy(target_to_query, labels)
+    return 0.5 * (loss_query + loss_target)
 
 
 def _average_attention(attention_maps: list[torch.Tensor]) -> torch.Tensor:
     if not attention_maps:
         raise ValueError("Expected at least one attention map for Text CC loss.")
     stacked = torch.stack(attention_maps, dim=0)
+    if stacked.ndim != 5:
+        raise ValueError("Expected attention maps with shape (batch, heads, image_tokens, text_tokens).")
     return stacked.mean(dim=(0, 2))
 
 
@@ -39,7 +44,7 @@ def text_concept_consistency_loss(
     sample_indices: list[int],
     epsilon: float = 0.05,
 ) -> torch.Tensor:
-    """Compare full-caption and isolated noun-phrase image attention maps."""
+    """Compare full-caption and isolated noun-phrase attention over image tokens."""
 
     if not full_token_indices or not isolated_token_indices or not sample_indices:
         ref = full_attention_maps[0]
@@ -55,12 +60,12 @@ def text_concept_consistency_loss(
             continue
         full_idx_tensor = torch.tensor(full_idx, device=full_attn.device)
         iso_idx_tensor = torch.tensor(iso_token_idx, device=iso_attn.device)
-        valid_full = full_idx_tensor[full_idx_tensor < full_attn.shape[1]]
-        valid_iso = iso_idx_tensor[iso_idx_tensor < iso_attn.shape[1]]
+        valid_full = full_idx_tensor[full_idx_tensor < full_attn.shape[-1]]
+        valid_iso = iso_idx_tensor[iso_idx_tensor < iso_attn.shape[-1]]
         if valid_full.numel() == 0 or valid_iso.numel() == 0:
             continue
-        a_full = full_attn[sample_idx, valid_full].mean(dim=0)
-        a_iso = iso_attn[iso_idx, valid_iso].mean(dim=0)
+        a_full = full_attn[sample_idx, :, valid_full].mean(dim=-1)
+        a_iso = iso_attn[iso_idx, :, valid_iso].mean(dim=-1)
         losses.append(torch.relu(torch.abs(a_full - a_iso) - epsilon).mean())
 
     if not losses:

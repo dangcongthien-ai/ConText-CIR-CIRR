@@ -34,22 +34,28 @@ class CIRLightningModule(pl.LightningModule if pl else torch.nn.Module):
     def forward(self, images: torch.Tensor, texts: list[str]) -> torch.Tensor:
         return self.model.forward_query(images, texts)
 
-    def _compute_losses(self, batch: dict[str, Any]) -> dict[str, torch.Tensor]:
+    def _compute_losses(
+        self,
+        batch: dict[str, Any],
+        include_query_negative: bool = True,
+        include_text_cc: bool = True,
+    ) -> dict[str, torch.Tensor]:
         reference = batch["reference_image"]
         target = batch["target_image"]
         captions = [str(text or "") for text in batch["caption"]]
         query_out = self.model.forward_with_attention(reference, captions)
         query_emb = query_out["embeddings"]
         target_emb = self.model.encode_gallery(target)
-        query_neg = self.model.encode_gallery(reference) if self.cfg.loss.use_query_image_negative else None
+        use_query_negative = self.cfg.loss.use_query_image_negative and include_query_negative
+        query_neg = self.model.encode_gallery(reference) if use_query_negative else None
         loss_cont = retrieval_contrastive_loss(
             query_emb,
             target_emb,
             query_neg,
             temperature=self.cfg.loss.temperature,
-            use_query_image_negative=self.cfg.loss.use_query_image_negative,
+            use_query_image_negative=use_query_negative,
         )
-        loss_cc = self._compute_text_cc(batch, query_out)
+        loss_cc = self._compute_text_cc(batch, query_out) if include_text_cc else query_emb.new_zeros(())
         loss_total = loss_cont + self.cfg.loss.lambda_cc * loss_cc
         return {"loss_total": loss_total, "loss_cont": loss_cont, "loss_cc": loss_cc}
 
@@ -109,7 +115,7 @@ class CIRLightningModule(pl.LightningModule if pl else torch.nn.Module):
     def validation_step(self, batch: dict[str, Any], batch_idx: int):
         if batch["target_image"] is None:
             return None
-        losses = self._compute_losses(batch)
+        losses = self._compute_losses(batch, include_query_negative=False, include_text_cc=False)
         batch_size = int(batch["reference_image"].shape[0])
         self.log(
             "val/loss",

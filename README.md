@@ -12,16 +12,15 @@ Training:
 
 1. Query branch computes `r_q = f(I_q, T)` from CLIP visual tokens, CLIP text
    tokens, cross-attention, and attention pooling.
-2. Target branch computes `r_t = f(I_t, "")`, using the exact same fusion
-   network and blank text.
-3. Query-negative branch computes `r_q_neg = f(I_q, "")`.
-4. Loss is `L_total = L_cont + lambda_cc * L_CC`, where `L_cont` is InfoNCE
-   over in-batch targets plus query-image negatives, and `L_CC` compares
+2. Target branch computes `r_t = g(I_t)` from the pure CLIP vision encoder.
+3. Query-negative branch computes `r_q_neg = g(I_q)` from the same vision encoder.
+4. Loss is `L_total = L_cont + lambda_cc * L_CC`, where `L_cont` is symmetric
+   InfoNCE over in-batch targets plus query-image negatives, and `L_CC` compares
    full-caption and isolated noun-phrase attention maps.
 
 Inference:
 
-1. Encode every official gallery image as `f(C_i, "")`.
+1. Encode every official gallery image as `g(C_i)` with the pure vision branch.
 2. L2-normalize embeddings and store them in a FAISS `IndexFlatIP` by default.
 3. Encode the query as `f(I_q, T)`, search FAISS, and remove the reference
    image from returned results when it appears in the gallery.
@@ -171,7 +170,7 @@ python scripts/make_cirr_submission.py --config configs/cirr_context_cir.yaml --
 | `src/cir_pipeline/engine/evaluator.py` | Full-gallery validation retrieval evaluator. |
 | `src/cir_pipeline/engine/comet_logger.py` | COMET/TensorBoard logger creation and artifact helpers. |
 | `src/cir_pipeline/retrieval/faiss_index.py` | FAISS create/save/load/search wrapper. |
-| `src/cir_pipeline/retrieval/build_gallery.py` | Encode gallery images with `f(C_i, "")` and persist FAISS artifacts. |
+| `src/cir_pipeline/retrieval/build_gallery.py` | Encode gallery images with `g(C_i)` and persist FAISS artifacts. |
 | `src/cir_pipeline/retrieval/search.py` | Encode query `f(I_q,T)`, search FAISS, and remove reference image. |
 | `src/cir_pipeline/utils/io.py` | JSON and filesystem helpers. |
 | `src/cir_pipeline/utils/device.py` | Recursive batch-to-device helper. |

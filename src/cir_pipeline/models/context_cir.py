@@ -18,16 +18,18 @@ class ConTextCIR(nn.Module):
         super().__init__()
         self.cfg = cfg
         self.encoders = CLIPTokenEncoders(cfg.backbone)
-        dim = self.encoders.embedding_dim
+        image_dim = self.encoders.image_embedding_dim
+        text_dim = self.encoders.text_embedding_dim
         self.fusion = CrossAttentionFusion(
-            dim=dim,
+            image_dim=image_dim,
+            text_dim=text_dim,
             num_layers=cfg.num_cross_attention_layers,
             num_heads=cfg.num_heads,
             dropout=cfg.dropout,
         )
-        self.pooling = AttentionPooling(dim=dim, num_heads=cfg.num_heads, dropout=cfg.dropout)
-        output_dim = cfg.projection_dim or dim
-        self.projection = nn.Identity() if output_dim == dim else nn.Linear(dim, output_dim)
+        self.pooling = AttentionPooling(dim=image_dim, num_heads=cfg.num_heads, dropout=cfg.dropout)
+        output_dim = cfg.projection_dim or image_dim
+        self.projection = nn.Identity() if output_dim == image_dim else nn.Linear(image_dim, output_dim)
         self.embedding_dim = output_dim
 
     @property
@@ -38,10 +40,12 @@ class ConTextCIR(nn.Module):
         return self.forward_with_attention(images, texts)["embeddings"]
 
     def encode_gallery(self, images: torch.Tensor) -> torch.Tensor:
-        """Encode gallery images as f(image, ''), matching the query space."""
+        """Encode gallery/target images with the pure CLIP vision branch."""
 
-        blank_texts = [""] * images.shape[0]
-        return self.forward_query(images, blank_texts)
+        embeddings = self.projection(self.encoders.encode_image_features(images))
+        if self.cfg.normalize_embeddings:
+            embeddings = F.normalize(embeddings, dim=-1)
+        return embeddings
 
     def forward_with_attention(
         self,
@@ -52,8 +56,8 @@ class ConTextCIR(nn.Module):
         del token_indices
         image_tokens = self.encoders.encode_image_tokens(images)
         text_tokens, text_mask = self.encoders.encode_text_tokens(texts, device=images.device)
-        fused_tokens, attention_maps = self.fusion(text_tokens, image_tokens)
-        pooled = self.pooling(fused_tokens, text_mask)
+        fused_tokens, attention_maps = self.fusion(image_tokens, text_tokens, text_mask)
+        pooled = self.pooling(fused_tokens)
         embeddings = self.projection(pooled)
         if self.cfg.normalize_embeddings:
             embeddings = F.normalize(embeddings, dim=-1)
