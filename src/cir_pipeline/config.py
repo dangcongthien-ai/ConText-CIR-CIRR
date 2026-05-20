@@ -39,6 +39,11 @@ class ModelConfig:
     dropout: float = 0.0
     projection_dim: Optional[int] = None
     normalize_embeddings: bool = True
+    freeze_vision_encoder: bool = True
+    freeze_text_encoder: bool = True
+    trainable_vision_layers: int = 0
+    trainable_text_layers: int = 0
+    use_gradient_checkpointing: bool = False
 
 
 @dataclass
@@ -48,6 +53,7 @@ class LossConfig:
     epsilon_cc: float = 0.05
     max_noun_phrases: int = 10
     use_query_image_negative: bool = True
+    query_negative_weight: float = 1.0
 
 
 @dataclass
@@ -56,13 +62,18 @@ class TrainConfig:
     val_batch_size: int = 256
     max_epochs: int = 30
     learning_rate: float = 1.0e-5
+    encoder_learning_rate: Optional[float] = None
     weight_decay: float = 1.0e-2
+    encoder_weight_decay: Optional[float] = None
     warmup_ratio: float = 0.05
     precision: str = "16-mixed"
     accelerator: str = "gpu"
     devices: int | str = 1
     gradient_clip_val: float = 1.0
     val_check_interval: float = 1.0
+    accumulate_grad_batches: int = 1
+    early_stopping_patience: int = 0
+    early_stopping_min_delta: float = 0.0
     save_top_k: int = 3
     monitor: str = "val/recall@10"
     monitor_mode: str = "max"
@@ -139,20 +150,57 @@ def load_config(path: str | Path) -> AppConfig:
 
 
 def validate_config(cfg: AppConfig) -> None:
-    if cfg.data.dataset != "cirr":
-        raise ValueError("Only data.dataset='cirr' is supported.")
-    if cfg.loss.temperature <= 0:
-        raise ValueError("loss.temperature must be > 0.")
-    if cfg.loss.lambda_cc < 0:
-        raise ValueError("loss.lambda_cc must be >= 0.")
-    if cfg.model.num_cross_attention_layers < 1:
-        raise ValueError("model.num_cross_attention_layers must be >= 1.")
-    if cfg.model.num_heads < 1:
-        raise ValueError("model.num_heads must be >= 1.")
-    if cfg.faiss.index_type not in {"flat_ip", "hnsw"}:
-        raise ValueError("faiss.index_type must be 'flat_ip' or 'hnsw'.")
-    if cfg.data.noun_phrase_backend not in {"auto", "stanza", "nltk", "regex"}:
-        raise ValueError("data.noun_phrase_backend must be one of: auto, stanza, nltk, regex.")
+    _validate_data_config(cfg.data)
+    _validate_loss_config(cfg.loss)
+    _validate_model_config(cfg.model)
+    _validate_train_config(cfg.train)
+    _validate_faiss_config(cfg.faiss)
+
+
+def _require(condition: bool, message: str) -> None:
+    if not condition:
+        raise ValueError(message)
+
+
+def _validate_data_config(cfg: DataConfig) -> None:
+    _require(cfg.dataset == "cirr", "Only data.dataset='cirr' is supported.")
+    _require(
+        cfg.noun_phrase_backend in {"auto", "stanza", "nltk", "regex"},
+        "data.noun_phrase_backend must be one of: auto, stanza, nltk, regex.",
+    )
+
+
+def _validate_loss_config(cfg: LossConfig) -> None:
+    _require(cfg.temperature > 0, "loss.temperature must be > 0.")
+    _require(cfg.lambda_cc >= 0, "loss.lambda_cc must be >= 0.")
+    _require(cfg.query_negative_weight >= 0, "loss.query_negative_weight must be >= 0.")
+
+
+def _validate_model_config(cfg: ModelConfig) -> None:
+    _require(cfg.num_cross_attention_layers >= 1, "model.num_cross_attention_layers must be >= 1.")
+    _require(cfg.num_heads >= 1, "model.num_heads must be >= 1.")
+    _require(cfg.trainable_vision_layers >= 0, "model.trainable_vision_layers must be >= 0.")
+    _require(cfg.trainable_text_layers >= 0, "model.trainable_text_layers must be >= 0.")
+
+
+def _validate_train_config(cfg: TrainConfig) -> None:
+    _require(cfg.learning_rate > 0, "train.learning_rate must be > 0.")
+    _require(
+        cfg.encoder_learning_rate is None or cfg.encoder_learning_rate > 0,
+        "train.encoder_learning_rate must be > 0 when set.",
+    )
+    _require(cfg.weight_decay >= 0, "train.weight_decay must be >= 0.")
+    _require(
+        cfg.encoder_weight_decay is None or cfg.encoder_weight_decay >= 0,
+        "train.encoder_weight_decay must be >= 0 when set.",
+    )
+    _require(cfg.accumulate_grad_batches >= 1, "train.accumulate_grad_batches must be >= 1.")
+    _require(cfg.early_stopping_patience >= 0, "train.early_stopping_patience must be >= 0.")
+    _require(cfg.early_stopping_min_delta >= 0, "train.early_stopping_min_delta must be >= 0.")
+
+
+def _validate_faiss_config(cfg: FaissConfig) -> None:
+    _require(cfg.index_type in {"flat_ip", "hnsw"}, "faiss.index_type must be 'flat_ip' or 'hnsw'.")
 
 
 def config_to_dict(cfg: AppConfig) -> dict[str, Any]:

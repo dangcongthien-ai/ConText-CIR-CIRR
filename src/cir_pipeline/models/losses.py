@@ -12,19 +12,23 @@ def retrieval_contrastive_loss(
     query_negative_embeddings: torch.Tensor | None = None,
     temperature: float = 0.07,
     use_query_image_negative: bool = True,
+    query_negative_weight: float = 1.0,
 ) -> torch.Tensor:
-    """Symmetric InfoNCE with optional query-image negatives."""
+    """Symmetric InfoNCE with an optional weighted reference-image penalty."""
 
     query_to_target = query_embeddings @ target_embeddings.t()
-    if use_query_image_negative and query_negative_embeddings is not None:
-        neg_logits = query_embeddings @ query_negative_embeddings.t()
-        query_to_target = torch.cat([query_to_target, neg_logits], dim=1)
     query_to_target = query_to_target / temperature
     target_to_query = (target_embeddings @ query_embeddings.t()) / temperature
     labels = torch.arange(query_embeddings.shape[0], device=query_embeddings.device)
     loss_query = F.cross_entropy(query_to_target, labels)
     loss_target = F.cross_entropy(target_to_query, labels)
-    return 0.5 * (loss_query + loss_target)
+    loss = 0.5 * (loss_query + loss_target)
+    if use_query_image_negative and query_negative_embeddings is not None and query_negative_weight > 0:
+        positive_logits = (query_embeddings * target_embeddings).sum(dim=-1) / temperature
+        reference_logits = (query_embeddings * query_negative_embeddings).sum(dim=-1) / temperature
+        query_negative_loss = F.softplus(reference_logits - positive_logits).mean()
+        loss = loss + query_negative_weight * query_negative_loss
+    return loss
 
 
 def _average_attention(attention_maps: list[torch.Tensor]) -> torch.Tensor:

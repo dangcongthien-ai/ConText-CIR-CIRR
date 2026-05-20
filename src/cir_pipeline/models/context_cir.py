@@ -18,6 +18,13 @@ class ConTextCIR(nn.Module):
         super().__init__()
         self.cfg = cfg
         self.encoders = CLIPTokenEncoders(cfg.backbone)
+        self.encoders.configure_gradient_checkpointing(cfg.use_gradient_checkpointing)
+        self.encoders.configure_trainable_encoders(
+            freeze_vision_encoder=cfg.freeze_vision_encoder,
+            freeze_text_encoder=cfg.freeze_text_encoder,
+            trainable_vision_layers=cfg.trainable_vision_layers,
+            trainable_text_layers=cfg.trainable_text_layers,
+        )
         image_dim = self.encoders.image_embedding_dim
         text_dim = self.encoders.text_embedding_dim
         self.fusion = CrossAttentionFusion(

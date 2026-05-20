@@ -18,6 +18,13 @@ Training:
    InfoNCE over in-batch targets plus query-image negatives, and `L_CC` compares
    full-caption and isolated noun-phrase attention maps.
 
+The default CIRR config freezes most of the CLIP vision and text encoders, then
+unfreezes only the last two transformer layers from each branch with gradient
+checkpointing. The encoder layers use a much lower learning rate than the
+cross-attention, pooling, and projection layers. Query-image negatives are kept
+as a small weighted penalty instead of being mixed directly into the retrieval
+softmax, so the train objective stays closer to validation retrieval loss.
+
 Inference:
 
 1. Encode every official gallery image as `g(C_i)` with the pure vision branch.
@@ -197,8 +204,10 @@ The parser warns and falls back to NLTK or regex. For better noun phrases, run
 `python -c "import stanza; stanza.download('en')"`.
 
 CUDA OOM:
-Lower `train.batch_size`, `train.val_batch_size`, or use gradient accumulation
-by adding it to the Trainer in `scripts/train.py`.
+Lower `train.batch_size` or `train.val_batch_size`, increase
+`train.accumulate_grad_batches`, reduce `model.trainable_vision_layers` to `1`
+or `0`, or keep both `model.trainable_*_layers` at `0` for a fully frozen
+encoder run.
 
 Stanza/NLTK warnings on Windows:
 The default config uses `data.noun_phrase_backend: "regex"` so smoke runs do not

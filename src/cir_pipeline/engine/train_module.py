@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 import torch
@@ -18,6 +19,14 @@ from cir_pipeline.engine.evaluator import evaluate_retrieval
 from cir_pipeline.models.context_cir import ConTextCIR
 from cir_pipeline.models.losses import retrieval_contrastive_loss, text_concept_consistency_loss
 from cir_pipeline.text.token_alignment import align_noun_phrases, align_single_phrase
+
+
+@dataclass
+class TextCCInputs:
+    full_token_indices: list[list[int]]
+    iso_token_indices: list[list[int]]
+    iso_texts: list[str]
+    sample_indices: list[int]
 
 
 class CIRLightningModule(pl.LightningModule if pl else torch.nn.Module):
@@ -54,6 +63,7 @@ class CIRLightningModule(pl.LightningModule if pl else torch.nn.Module):
             query_neg,
             temperature=self.cfg.loss.temperature,
             use_query_image_negative=use_query_negative,
+            query_negative_weight=self.cfg.loss.query_negative_weight if include_query_negative else 0.0,
         )
         loss_cc = self._compute_text_cc(batch, query_out) if include_text_cc else query_emb.new_zeros(())
         loss_total = loss_cont + self.cfg.loss.lambda_cc * loss_cc
@@ -64,36 +74,49 @@ class CIRLightningModule(pl.LightningModule if pl else torch.nn.Module):
             return query_out["embeddings"].new_zeros(())
         captions = [str(text or "") for text in batch["caption"]]
         noun_phrases = batch.get("noun_phrases") or [[] for _ in captions]
+        text_cc_inputs = self._build_text_cc_inputs(captions, noun_phrases)
+        if not text_cc_inputs.iso_texts:
+            return query_out["embeddings"].new_zeros(())
+
+        iso_images = batch["reference_image"][
+            torch.tensor(text_cc_inputs.sample_indices, device=batch["reference_image"].device)
+        ]
+        iso_out = self.model.forward_with_attention(iso_images, text_cc_inputs.iso_texts)
+        return text_concept_consistency_loss(
+            query_out["attention_maps"],
+            iso_out["attention_maps"],
+            text_cc_inputs.full_token_indices,
+            text_cc_inputs.iso_token_indices,
+            text_cc_inputs.sample_indices,
+            epsilon=self.cfg.loss.epsilon_cc,
+        )
+
+    def _build_text_cc_inputs(
+        self,
+        captions: list[str],
+        noun_phrases: list[list[str]],
+    ) -> TextCCInputs:
         full_token_indices: list[list[int]] = []
         iso_token_indices: list[list[int]] = []
         iso_texts: list[str] = []
         sample_indices: list[int] = []
         for sample_idx, (caption, phrases) in enumerate(zip(captions, noun_phrases)):
-            phrases = list(phrases or [])[: self.cfg.loss.max_noun_phrases]
-            aligned = align_noun_phrases(caption, phrases, self.model.tokenizer)
-            for phrase, token_idx in zip(phrases, aligned):
-                if not token_idx:
-                    continue
-                iso_idx = align_single_phrase(phrase, phrase, self.model.tokenizer)
-                if not iso_idx:
-                    continue
-                full_token_indices.append(token_idx)
+            for phrase, full_idx, iso_idx in self._iter_valid_phrase_alignments(caption, phrases):
+                full_token_indices.append(full_idx)
                 iso_token_indices.append(iso_idx)
                 iso_texts.append(phrase)
                 sample_indices.append(sample_idx)
+        return TextCCInputs(full_token_indices, iso_token_indices, iso_texts, sample_indices)
 
-        if not iso_texts:
-            return query_out["embeddings"].new_zeros(())
-        iso_images = batch["reference_image"][torch.tensor(sample_indices, device=batch["reference_image"].device)]
-        iso_out = self.model.forward_with_attention(iso_images, iso_texts)
-        return text_concept_consistency_loss(
-            query_out["attention_maps"],
-            iso_out["attention_maps"],
-            full_token_indices,
-            iso_token_indices,
-            sample_indices,
-            epsilon=self.cfg.loss.epsilon_cc,
-        )
+    def _iter_valid_phrase_alignments(self, caption: str, phrases: list[str]):
+        clipped_phrases = list(phrases or [])[: self.cfg.loss.max_noun_phrases]
+        aligned = align_noun_phrases(caption, clipped_phrases, self.model.tokenizer)
+        for phrase, full_idx in zip(clipped_phrases, aligned):
+            if not full_idx:
+                continue
+            iso_idx = align_single_phrase(phrase, phrase, self.model.tokenizer)
+            if iso_idx:
+                yield phrase, full_idx, iso_idx
 
     def training_step(self, batch: dict[str, Any], batch_idx: int):
         losses = self._compute_losses(batch)
@@ -144,7 +167,33 @@ class CIRLightningModule(pl.LightningModule if pl else torch.nn.Module):
             metrics["num_samples_train"] = float(len(train_dataset))
         if val_dataset is not None:
             metrics["num_samples_val"] = float(len(val_dataset))
+        metrics.update(self._parameter_metrics())
         self._log_direct_metrics(metrics)
+
+    def _parameter_metrics(self) -> dict[str, float]:
+        trainable = sum(parameter.numel() for parameter in self.parameters() if parameter.requires_grad)
+        frozen = sum(parameter.numel() for parameter in self.parameters() if not parameter.requires_grad)
+        trainable_encoder = sum(
+            parameter.numel()
+            for name, parameter in self.named_parameters()
+            if parameter.requires_grad and name.startswith("model.encoders.")
+        )
+        trainable_head = trainable - trainable_encoder
+        return {
+            "num_trainable_params": float(trainable),
+            "num_trainable_encoder_params": float(trainable_encoder),
+            "num_trainable_head_params": float(trainable_head),
+            "num_frozen_params": float(frozen),
+            "num_total_params": float(trainable + frozen),
+            "freeze_vision_encoder": float(bool(self.cfg.model.freeze_vision_encoder)),
+            "freeze_text_encoder": float(bool(self.cfg.model.freeze_text_encoder)),
+            "trainable_vision_layers": float(self.cfg.model.trainable_vision_layers),
+            "trainable_text_layers": float(self.cfg.model.trainable_text_layers),
+            "use_gradient_checkpointing": float(bool(self.cfg.model.use_gradient_checkpointing)),
+            "head_learning_rate": float(self.cfg.train.learning_rate),
+            "encoder_learning_rate": float(self.cfg.train.encoder_learning_rate or self.cfg.train.learning_rate),
+            "query_negative_weight": float(self.cfg.loss.query_negative_weight),
+        }
 
     def _log_direct_metrics(self, metrics: dict[str, float]) -> None:
         if not metrics:
@@ -180,8 +229,39 @@ class CIRLightningModule(pl.LightningModule if pl else torch.nn.Module):
             )
 
     def configure_optimizers(self):
+        head_named_parameters = []
+        encoder_named_parameters = []
+        for name, parameter in self.named_parameters():
+            if not parameter.requires_grad:
+                continue
+            if name.startswith("model.encoders."):
+                encoder_named_parameters.append((name, parameter))
+            else:
+                head_named_parameters.append((name, parameter))
+
+        if not head_named_parameters and not encoder_named_parameters:
+            raise RuntimeError("No trainable parameters. Check model freeze settings.")
+        parameter_groups = []
+        self._append_optimizer_groups(
+            parameter_groups,
+            head_named_parameters,
+            lr=self.cfg.train.learning_rate,
+            weight_decay=self.cfg.train.weight_decay,
+            name="head",
+        )
+        self._append_optimizer_groups(
+            parameter_groups,
+            encoder_named_parameters,
+            lr=self.cfg.train.encoder_learning_rate or self.cfg.train.learning_rate,
+            weight_decay=(
+                self.cfg.train.encoder_weight_decay
+                if self.cfg.train.encoder_weight_decay is not None
+                else self.cfg.train.weight_decay
+            ),
+            name="encoder",
+        )
         optimizer = AdamW(
-            self.parameters(),
+            parameter_groups,
             lr=self.cfg.train.learning_rate,
             weight_decay=self.cfg.train.weight_decay,
         )
@@ -200,3 +280,38 @@ class CIRLightningModule(pl.LightningModule if pl else torch.nn.Module):
             "optimizer": optimizer,
             "lr_scheduler": {"scheduler": scheduler, "interval": "step"},
         }
+
+    def _append_optimizer_groups(
+        self,
+        parameter_groups: list[dict[str, Any]],
+        named_parameters: list[tuple[str, torch.nn.Parameter]],
+        lr: float,
+        weight_decay: float,
+        name: str,
+    ) -> None:
+        if not named_parameters:
+            return
+        decay_parameters = []
+        no_decay_parameters = []
+        for parameter_name, parameter in named_parameters:
+            if self._should_skip_weight_decay(parameter_name, parameter):
+                no_decay_parameters.append(parameter)
+            else:
+                decay_parameters.append(parameter)
+        if decay_parameters:
+            parameter_groups.append(
+                {"params": decay_parameters, "lr": lr, "weight_decay": weight_decay, "name": f"{name}_decay"}
+            )
+        if no_decay_parameters:
+            parameter_groups.append(
+                {"params": no_decay_parameters, "lr": lr, "weight_decay": 0.0, "name": f"{name}_no_decay"}
+            )
+
+    def _should_skip_weight_decay(self, parameter_name: str, parameter: torch.nn.Parameter) -> bool:
+        lower_name = parameter_name.lower()
+        return (
+            parameter.ndim < 2
+            or lower_name.endswith(".bias")
+            or "norm" in lower_name
+            or "embedding" in lower_name
+        )

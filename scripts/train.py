@@ -9,7 +9,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import torch
 import pytorch_lightning as pl
-from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
+from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint
 
 from cir_pipeline.config import load_config, save_config
 from cir_pipeline.data.cirr_datamodule import CIRRDataModule
@@ -59,12 +59,22 @@ def main() -> None:
         ),
         LearningRateMonitor(logging_interval="step"),
     ]
+    if cfg.train.early_stopping_patience > 0 and not args.fast_dev_run:
+        callbacks.append(
+            EarlyStopping(
+                monitor=cfg.train.monitor,
+                mode=cfg.train.monitor_mode,
+                patience=cfg.train.early_stopping_patience,
+                min_delta=cfg.train.early_stopping_min_delta,
+            )
+        )
     trainer = pl.Trainer(
         max_epochs=cfg.train.max_epochs,
         accelerator=accelerator,
         devices=devices,
         precision=precision,
         gradient_clip_val=cfg.train.gradient_clip_val,
+        accumulate_grad_batches=cfg.train.accumulate_grad_batches,
         val_check_interval=cfg.train.val_check_interval,
         default_root_dir=cfg.project.output_dir,
         logger=logger,
