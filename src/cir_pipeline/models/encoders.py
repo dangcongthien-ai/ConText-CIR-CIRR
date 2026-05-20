@@ -27,9 +27,15 @@ class CLIPTokenEncoders(nn.Module):
     def configure_gradient_checkpointing(self, enabled: bool) -> None:
         for model in (self.vision_model, self.text_model):
             if enabled and hasattr(model, "gradient_checkpointing_enable"):
-                model.gradient_checkpointing_enable()
+                self._enable_gradient_checkpointing(model)
             elif not enabled and hasattr(model, "gradient_checkpointing_disable"):
                 model.gradient_checkpointing_disable()
+
+    def _enable_gradient_checkpointing(self, model: nn.Module) -> None:
+        try:
+            model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+        except TypeError:
+            model.gradient_checkpointing_enable()
 
     def configure_trainable_encoders(
         self,

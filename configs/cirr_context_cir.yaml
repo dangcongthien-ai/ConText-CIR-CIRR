@@ -40,7 +40,7 @@ loss:
 train:
   batch_size: 64
   val_batch_size: 128
-  max_epochs: 12
+  max_epochs: 20
   learning_rate: 2.0e-5
   encoder_learning_rate: 2.0e-6
   weight_decay: 1.0e-2
