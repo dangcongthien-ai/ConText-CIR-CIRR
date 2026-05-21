@@ -322,18 +322,12 @@ def load_cir_module_from_checkpoint(
     cfg: AppConfig,
     map_location: torch.device | str | None = None,
 ) -> CIRLightningModule:
-    """Load a training checkpoint without requiring Lightning at inference time."""
-
-    if hasattr(CIRLightningModule, "load_from_checkpoint"):
-        return CIRLightningModule.load_from_checkpoint(checkpoint_path, cfg=cfg, map_location=map_location)
+    """Load a training checkpoint with compatibility for legacy encoder key names."""
 
     checkpoint = _torch_load_checkpoint(checkpoint_path, map_location)
-    state_dict = checkpoint.get("state_dict", checkpoint) if isinstance(checkpoint, dict) else checkpoint
-    if not isinstance(state_dict, dict):
-        raise RuntimeError(f"Checkpoint does not contain a state_dict: {checkpoint_path}")
-
+    state_dict = _extract_state_dict(checkpoint, checkpoint_path)
     module = CIRLightningModule(cfg)
-    module.load_state_dict(state_dict)
+    module.load_state_dict(_migrate_legacy_state_dict_keys(state_dict))
     return module
 
 
@@ -341,4 +335,30 @@ def _torch_load_checkpoint(
     checkpoint_path: str,
     map_location: torch.device | str | None,
 ) -> Any:
-    return torch.load(checkpoint_path, map_location=map_location, weights_only=True)
+    try:
+        return torch.load(checkpoint_path, map_location=map_location, weights_only=True)
+    except TypeError as exc:
+        raise RuntimeError("Safe checkpoint loading requires a PyTorch version with weights_only support.") from exc
+
+
+def _extract_state_dict(checkpoint: Any, checkpoint_path: str) -> dict[str, torch.Tensor]:
+    state_dict = checkpoint.get("state_dict", checkpoint) if isinstance(checkpoint, dict) else checkpoint
+    if not isinstance(state_dict, dict):
+        raise RuntimeError(f"Checkpoint does not contain a state_dict: {checkpoint_path}")
+    return state_dict
+
+
+def _migrate_legacy_state_dict_keys(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+    replacements = {
+        "model.encoders.vision_model.vision_model.": "model.encoders.vision_model.",
+        "model.encoders.text_model.text_model.": "model.encoders.text_model.",
+    }
+    migrated = {}
+    for key, value in state_dict.items():
+        new_key = key
+        for old_prefix, new_prefix in replacements.items():
+            if new_key.startswith(old_prefix):
+                new_key = new_prefix + new_key[len(old_prefix) :]
+                break
+        migrated[new_key] = value
+    return migrated
