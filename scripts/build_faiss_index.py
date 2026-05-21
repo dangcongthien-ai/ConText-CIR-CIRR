@@ -12,7 +12,7 @@ import torch
 from cir_pipeline.config import load_config
 from cir_pipeline.data.cirr_datamodule import CIRRDataModule
 from cir_pipeline.engine.comet_logger import build_lightning_logger, log_artifact, log_config
-from cir_pipeline.engine.train_module import CIRLightningModule
+from cir_pipeline.engine.train_module import load_cir_module_from_checkpoint
 from cir_pipeline.retrieval.build_gallery import build_gallery_index
 
 
@@ -29,7 +29,7 @@ def main() -> None:
     args = parse_args()
     cfg = load_config(args.config)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    module = CIRLightningModule.load_from_checkpoint(args.checkpoint, cfg=cfg, map_location=device)
+    module = load_cir_module_from_checkpoint(args.checkpoint, cfg=cfg, map_location=device)
     module.model.to(device).eval()
     datamodule = CIRRDataModule(cfg)
     gallery = datamodule.gallery_dataset(args.split)

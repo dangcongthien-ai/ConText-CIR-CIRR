@@ -12,7 +12,7 @@ data:
   metadata_root: "CIRR/cirr"
   use_extended_captions: false
   skip_empty_captions: true
-  noun_phrase_backend: "regex"
+  noun_phrase_backend: "stanza"
   num_workers: 8
 
 model:
@@ -31,9 +31,9 @@ model:
 
 loss:
   temperature: 0.07
-  lambda_cc: 0.01
+  lambda_cc: 0.05
   epsilon_cc: 0.005
-  max_noun_phrases: 3
+  max_noun_phrases: 5
   use_query_image_negative: true
   query_negative_weight: 0.1
 

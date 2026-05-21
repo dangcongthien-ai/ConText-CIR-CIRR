@@ -12,7 +12,7 @@ import torch
 
 from cir_pipeline.config import load_config
 from cir_pipeline.engine.comet_logger import build_lightning_logger, log_artifact, log_config
-from cir_pipeline.engine.train_module import CIRLightningModule
+from cir_pipeline.engine.train_module import load_cir_module_from_checkpoint
 from cir_pipeline.retrieval.search import encode_query_image_text, save_retrieval_results, search_index
 
 
@@ -34,7 +34,7 @@ def main() -> None:
     args = parse_args()
     cfg = load_config(args.config)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    module = CIRLightningModule.load_from_checkpoint(args.checkpoint, cfg=cfg, map_location=device)
+    module = load_cir_module_from_checkpoint(args.checkpoint, cfg=cfg, map_location=device)
     module.model.to(device).eval()
 
     query_embedding = encode_query_image_text(module.model, args.query_image, args.text, device)

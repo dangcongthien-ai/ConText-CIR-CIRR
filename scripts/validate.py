@@ -13,7 +13,7 @@ import torch
 from cir_pipeline.config import load_config
 from cir_pipeline.data.cirr_datamodule import CIRRDataModule
 from cir_pipeline.engine.evaluator import evaluate_retrieval
-from cir_pipeline.engine.train_module import CIRLightningModule
+from cir_pipeline.engine.train_module import load_cir_module_from_checkpoint
 from cir_pipeline.utils.io import write_json
 
 
@@ -30,7 +30,7 @@ def main() -> None:
     args = parse_args()
     cfg = load_config(args.config)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    module = CIRLightningModule.load_from_checkpoint(args.checkpoint, cfg=cfg, map_location=device)
+    module = load_cir_module_from_checkpoint(args.checkpoint, cfg=cfg, map_location=device)
     module.model.to(device)
     datamodule = CIRRDataModule(cfg)
     relative = datamodule.relative_dataset(args.split)
