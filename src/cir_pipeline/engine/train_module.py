@@ -341,7 +341,4 @@ def _torch_load_checkpoint(
     checkpoint_path: str,
     map_location: torch.device | str | None,
 ) -> Any:
-    try:
-        return torch.load(checkpoint_path, map_location=map_location, weights_only=False)
-    except TypeError:
-        return torch.load(checkpoint_path, map_location=map_location)
+    return torch.load(checkpoint_path, map_location=map_location, weights_only=True)
