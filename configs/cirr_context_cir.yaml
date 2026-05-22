@@ -13,6 +13,8 @@ data:
   use_extended_captions: false
   skip_empty_captions: true
   noun_phrase_backend: "stanza"
+  stanza_resources_dir: ".stanza_resources"
+  stanza_download_method: "none"
   num_workers: 8
 
 model:

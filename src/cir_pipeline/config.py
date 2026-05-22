@@ -27,6 +27,8 @@ class DataConfig:
     use_extended_captions: bool = False
     skip_empty_captions: bool = True
     noun_phrase_backend: str = "regex"
+    stanza_resources_dir: Optional[str] = None
+    stanza_download_method: str = "reuse_resources"
     num_workers: int = 8
 
 
@@ -167,6 +169,10 @@ def _validate_data_config(cfg: DataConfig) -> None:
     _require(
         cfg.noun_phrase_backend in {"auto", "stanza", "nltk", "regex"},
         "data.noun_phrase_backend must be one of: auto, stanza, nltk, regex.",
+    )
+    _require(
+        cfg.stanza_download_method in {"none", "reuse_resources", "download_resources"},
+        "data.stanza_download_method must be one of: none, reuse_resources, download_resources.",
     )
 
 

@@ -6,6 +6,7 @@ import re
 import warnings
 from collections import deque
 from dataclasses import dataclass
+from pathlib import Path
 
 
 FALLBACK_STOPWORDS = {
@@ -41,6 +42,8 @@ class NounPhraseParser:
 
     max_phrases: int = 10
     backend: str = "auto"
+    stanza_resources_dir: str | None = None
+    stanza_download_method: str = "reuse_resources"
 
     def __post_init__(self) -> None:
         self._stanza_pipeline = None
@@ -53,14 +56,14 @@ class NounPhraseParser:
             return []
         for backend, extractor in self._backend_extractors():
             phrases = extractor(text)
-            if phrases or self.backend == backend:
+            if phrases:
                 return phrases[: self.max_phrases]
         return self._extract_regex(text)[: self.max_phrases]
 
     def _backend_extractors(self):
         if self.backend in {"auto", "stanza"}:
             yield "stanza", self._extract_stanza
-        if self.backend in {"auto", "nltk"}:
+        if self.backend in {"auto", "stanza", "nltk"}:
             yield "nltk", self._extract_nltk
 
     def _ensure_stanza(self):
@@ -71,12 +74,8 @@ class NounPhraseParser:
         try:
             import stanza
 
-            self._stanza_pipeline = stanza.Pipeline(
-                lang="en",
-                processors="tokenize,pos,constituency",
-                use_gpu=False,
-                verbose=False,
-            )
+            pipeline_kwargs = self._stanza_pipeline_kwargs()
+            self._stanza_pipeline = stanza.Pipeline(**pipeline_kwargs)
             return self._stanza_pipeline
         except Exception as exc:  # pragma: no cover - depends on local models
             self._stanza_failed = True
@@ -85,6 +84,32 @@ class NounPhraseParser:
                 f"Original error: {exc}"
             )
             return None
+
+    def _stanza_pipeline_kwargs(self) -> dict:
+        kwargs = {
+            "lang": "en",
+            "processors": "tokenize,pos,constituency",
+            "use_gpu": False,
+            "verbose": False,
+        }
+        if self.stanza_resources_dir:
+            kwargs["dir"] = str(Path(self.stanza_resources_dir))
+        kwargs["download_method"] = self._stanza_download_method()
+        return kwargs
+
+    def _stanza_download_method(self):
+        method = self.stanza_download_method.lower()
+        if method == "none":
+            return None
+        try:
+            from stanza.pipeline.core import DownloadMethod
+        except Exception:  # pragma: no cover - depends on local stanza version
+            return method
+        enum_name = {
+            "reuse_resources": "REUSE_RESOURCES",
+            "download_resources": "DOWNLOAD_RESOURCES",
+        }[method]
+        return getattr(DownloadMethod, enum_name)
 
     def _extract_stanza(self, text: str) -> list[str]:
         nlp = self._ensure_stanza()
@@ -176,3 +201,23 @@ class NounPhraseParser:
         if phrase not in phrases:
             phrases.append(phrase)
         return current[-1:]
+
+
+def prepare_stanza_resources(resources_dir: str | None = None) -> bool:
+    """Download Stanza English parser resources once before DataLoader workers start."""
+
+    try:
+        import stanza
+
+        kwargs = {
+            "lang": "en",
+            "processors": "tokenize,pos,constituency",
+            "verbose": False,
+        }
+        if resources_dir:
+            kwargs["model_dir"] = str(Path(resources_dir))
+        stanza.download(**kwargs)
+        return True
+    except Exception as exc:  # pragma: no cover - depends on network/local cache
+        warnings.warn(f"Could not prepare Stanza resources; parser will fall back if needed. Original error: {exc}")
+        return False

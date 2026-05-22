@@ -10,6 +10,8 @@ def test_default_config_loads():
     data = config_to_dict(cfg)
     assert data["project"]["name"] == "CIR_Pipeline"
     assert data["data"]["metadata_root"] == "CIRR/cirr"
+    assert data["data"]["stanza_resources_dir"] == ".stanza_resources"
+    assert data["data"]["stanza_download_method"] == "none"
     assert data["faiss"]["index_type"] == "flat_ip"
     assert data["model"]["freeze_vision_encoder"] is True
     assert data["model"]["freeze_text_encoder"] is True

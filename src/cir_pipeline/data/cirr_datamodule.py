@@ -25,6 +25,8 @@ class CIRRDataModule(pl.LightningDataModule if pl else object):
         self.noun_parser = NounPhraseParser(
             max_phrases=cfg.loss.max_noun_phrases,
             backend=cfg.data.noun_phrase_backend,
+            stanza_resources_dir=cfg.data.stanza_resources_dir,
+            stanza_download_method=cfg.data.stanza_download_method,
         )
         self.train_dataset: CIRRDataset | None = None
         self.val_dataset: CIRRDataset | None = None
@@ -38,15 +40,15 @@ class CIRRDataModule(pl.LightningDataModule if pl else object):
                 self.cfg.data, "train", "relative", train_tf, self.noun_parser
             )
             self.val_dataset = CIRRDataset(
-                self.cfg.data, "val", "relative", eval_tf, self.noun_parser
+                self.cfg.data, "val", "relative", eval_tf, None
             )
         if stage in {None, "validate"} and self.val_dataset is None:
             self.val_dataset = CIRRDataset(
-                self.cfg.data, "val", "relative", eval_tf, self.noun_parser
+                self.cfg.data, "val", "relative", eval_tf, None
             )
         if stage in {None, "test", "predict"}:
             self.test_dataset = CIRRDataset(
-                self.cfg.data, "test1", "relative", eval_tf, self.noun_parser
+                self.cfg.data, "test1", "relative", eval_tf, None
             )
 
     def train_dataloader(self) -> DataLoader:
@@ -82,7 +84,7 @@ class CIRRDataModule(pl.LightningDataModule if pl else object):
             split,
             "relative",
             build_clip_transform(train=False),
-            self.noun_parser,
+            None,
         )
 
     def gallery_dataset(self, split: SplitName) -> CIRRDataset:

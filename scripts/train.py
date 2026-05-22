@@ -16,6 +16,7 @@ from cir_pipeline.data.cirr_datamodule import CIRRDataModule
 from cir_pipeline.engine.comet_logger import build_lightning_logger, log_artifact, log_config
 from cir_pipeline.engine.train_module import CIRLightningModule
 from cir_pipeline.seed import seed_everything
+from cir_pipeline.text.noun_phrase_parser import prepare_stanza_resources
 
 
 def parse_args() -> argparse.Namespace:
@@ -41,6 +42,8 @@ def main() -> None:
         accelerator = "cpu"
         devices = 1
         precision = "32-true"
+    if cfg.data.noun_phrase_backend in {"auto", "stanza"}:
+        prepare_stanza_resources(cfg.data.stanza_resources_dir)
 
     datamodule = CIRRDataModule(cfg)
     module = CIRLightningModule(cfg)
