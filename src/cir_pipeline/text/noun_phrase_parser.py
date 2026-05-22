@@ -63,7 +63,7 @@ class NounPhraseParser:
     def _backend_extractors(self):
         if self.backend in {"auto", "stanza"}:
             yield "stanza", self._extract_stanza
-        if self.backend in {"auto", "stanza", "nltk"}:
+        if self.backend in {"auto", "nltk"}:
             yield "nltk", self._extract_nltk
 
     def _ensure_stanza(self):
