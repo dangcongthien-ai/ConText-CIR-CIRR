@@ -48,7 +48,7 @@ def text_concept_consistency_loss(
     sample_indices: list[int],
     epsilon: float = 0.05,
 ) -> torch.Tensor:
-    """Compare full-caption and isolated noun-phrase attention over image tokens."""
+    """Compare full-caption and isolated noun-phrase image-token attention distributions."""
 
     if not full_token_indices or not isolated_token_indices or not sample_indices:
         ref = full_attention_maps[0]
@@ -68,10 +68,28 @@ def text_concept_consistency_loss(
         valid_iso = iso_idx_tensor[iso_idx_tensor < iso_attn.shape[-1]]
         if valid_full.numel() == 0 or valid_iso.numel() == 0:
             continue
-        a_full = full_attn[sample_idx, :, valid_full].mean(dim=-1)
-        a_iso = iso_attn[iso_idx, :, valid_iso].mean(dim=-1)
-        losses.append(torch.relu(torch.abs(a_full - a_iso) - epsilon).mean())
+        full_dist = _phrase_image_distribution(full_attn[sample_idx], valid_full)
+        iso_dist = _phrase_image_distribution(iso_attn[iso_idx], valid_iso)
+        losses.append(torch.relu(_jensen_shannon_divergence(full_dist, iso_dist) - epsilon))
 
     if not losses:
         return full_attn.new_zeros(())
     return torch.stack(losses).mean()
+
+
+def _phrase_image_distribution(attention: torch.Tensor, token_indices: torch.Tensor) -> torch.Tensor:
+    phrase_attention = attention[:, token_indices].mean(dim=-1)
+    if phrase_attention.shape[0] > 1:
+        phrase_attention = phrase_attention[1:]
+    phrase_attention = phrase_attention.clamp_min(0)
+    return phrase_attention / phrase_attention.sum().clamp_min(1e-8)
+
+
+def _jensen_shannon_divergence(first: torch.Tensor, second: torch.Tensor) -> torch.Tensor:
+    first = first.clamp_min(1e-8)
+    second = second.clamp_min(1e-8)
+    mixture = 0.5 * (first + second)
+    return 0.5 * (
+        F.kl_div(mixture.log(), first, reduction="sum")
+        + F.kl_div(mixture.log(), second, reduction="sum")
+    )

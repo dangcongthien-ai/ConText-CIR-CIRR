@@ -65,24 +65,33 @@ class CIRLightningModule(pl.LightningModule if pl else torch.nn.Module):
             use_query_image_negative=use_query_negative,
             query_negative_weight=self.cfg.loss.query_negative_weight if include_query_negative else 0.0,
         )
-        loss_cc = self._compute_text_cc(batch, query_out) if include_text_cc else query_emb.new_zeros(())
+        if include_text_cc:
+            loss_cc, num_text_cc_pairs = self._compute_text_cc(batch, query_out)
+        else:
+            loss_cc = query_emb.new_zeros(())
+            num_text_cc_pairs = 0
         loss_total = loss_cont + self.cfg.loss.lambda_cc * loss_cc
-        return {"loss_total": loss_total, "loss_cont": loss_cont, "loss_cc": loss_cc}
+        return {
+            "loss_total": loss_total,
+            "loss_cont": loss_cont,
+            "loss_cc": loss_cc,
+            "num_text_cc_pairs": query_emb.new_tensor(float(num_text_cc_pairs)),
+        }
 
-    def _compute_text_cc(self, batch: dict[str, Any], query_out: dict[str, Any]) -> torch.Tensor:
+    def _compute_text_cc(self, batch: dict[str, Any], query_out: dict[str, Any]) -> tuple[torch.Tensor, int]:
         if self.cfg.loss.lambda_cc <= 0:
-            return query_out["embeddings"].new_zeros(())
+            return query_out["embeddings"].new_zeros(()), 0
         captions = [str(text or "") for text in batch["caption"]]
         noun_phrases = batch.get("noun_phrases") or [[] for _ in captions]
         text_cc_inputs = self._build_text_cc_inputs(captions, noun_phrases)
         if not text_cc_inputs.iso_texts:
-            return query_out["embeddings"].new_zeros(())
+            return query_out["embeddings"].new_zeros(()), 0
 
         iso_images = batch["reference_image"][
             torch.tensor(text_cc_inputs.sample_indices, device=batch["reference_image"].device)
         ]
         iso_out = self.model.forward_with_attention(iso_images, text_cc_inputs.iso_texts)
-        return text_concept_consistency_loss(
+        loss_cc = text_concept_consistency_loss(
             query_out["attention_maps"],
             iso_out["attention_maps"],
             text_cc_inputs.full_token_indices,
@@ -90,6 +99,7 @@ class CIRLightningModule(pl.LightningModule if pl else torch.nn.Module):
             text_cc_inputs.sample_indices,
             epsilon=self.cfg.loss.epsilon_cc,
         )
+        return loss_cc, len(text_cc_inputs.iso_texts)
 
     def _build_text_cc_inputs(
         self,
@@ -131,6 +141,20 @@ class CIRLightningModule(pl.LightningModule if pl else torch.nn.Module):
         )
         self.log("train/loss_cont", losses["loss_cont"], on_step=True, on_epoch=True, batch_size=batch_size)
         self.log("train/loss_cc", losses["loss_cc"], on_step=True, on_epoch=True, batch_size=batch_size)
+        self.log(
+            "train/loss_cc_weighted",
+            losses["loss_cc"] * self.cfg.loss.lambda_cc,
+            on_step=True,
+            on_epoch=True,
+            batch_size=batch_size,
+        )
+        self.log(
+            "train/text_cc_pairs",
+            losses["num_text_cc_pairs"],
+            on_step=True,
+            on_epoch=True,
+            batch_size=batch_size,
+        )
         lr = self.trainer.optimizers[0].param_groups[0]["lr"] if self.trainer.optimizers else 0.0
         self.log("lr", lr, on_step=True, on_epoch=False, batch_size=batch_size)
         return losses["loss_total"]

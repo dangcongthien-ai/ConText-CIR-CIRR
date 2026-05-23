@@ -18,6 +18,8 @@ def test_default_config_loads():
     assert data["model"]["trainable_vision_layers"] == 2
     assert data["model"]["trainable_text_layers"] == 2
     assert data["model"]["use_gradient_checkpointing"] is True
+    assert math.isclose(data["loss"]["lambda_cc"], 0.2)
+    assert math.isclose(data["loss"]["epsilon_cc"], 0.0)
     assert math.isclose(data["loss"]["query_negative_weight"], 0.1)
     assert math.isclose(data["train"]["encoder_learning_rate"], 2.0e-6)
     assert math.isclose(data["train"]["encoder_weight_decay"], 5.0e-3)
