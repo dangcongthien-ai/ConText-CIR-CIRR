@@ -351,7 +351,7 @@ def load_cir_module_from_checkpoint(
     checkpoint = _torch_load_checkpoint(checkpoint_path, map_location)
     state_dict = _extract_state_dict(checkpoint, checkpoint_path)
     module = CIRLightningModule(cfg)
-    module.load_state_dict(_migrate_legacy_state_dict_keys(state_dict))
+    module.load_state_dict(_migrate_legacy_state_dict_keys(state_dict, module.state_dict()))
     return module
 
 
@@ -372,12 +372,39 @@ def _extract_state_dict(checkpoint: Any, checkpoint_path: str) -> dict[str, torc
     return state_dict
 
 
-def _migrate_legacy_state_dict_keys(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-    replacements = {
-        "model.encoders.vision_model.vision_model.": "model.encoders.vision_model.",
-        "model.encoders.text_model.text_model.": "model.encoders.text_model.",
-    }
-    migrated = {}
+def _migrate_legacy_state_dict_keys(
+    state_dict: dict[str, torch.Tensor],
+    target_state_dict: dict[str, torch.Tensor] | None = None,
+) -> dict[str, torch.Tensor]:
+    candidates = [
+        state_dict,
+        _replace_state_dict_prefixes(
+            state_dict,
+            {
+                "model.encoders.vision_model.vision_model.": "model.encoders.vision_model.",
+                "model.encoders.text_model.text_model.": "model.encoders.text_model.",
+            },
+        ),
+        _replace_state_dict_prefixes(
+            state_dict,
+            {
+                "model.encoders.vision_model.": "model.encoders.vision_model.vision_model.",
+                "model.encoders.text_model.": "model.encoders.text_model.text_model.",
+            },
+        ),
+    ]
+    if target_state_dict is None:
+        return candidates[0]
+
+    target_keys = set(target_state_dict)
+    return max(candidates, key=lambda candidate: len(target_keys.intersection(candidate)))
+
+
+def _replace_state_dict_prefixes(
+    state_dict: dict[str, torch.Tensor],
+    replacements: dict[str, str],
+) -> dict[str, torch.Tensor]:
+    migrated: dict[str, torch.Tensor] = {}
     for key, value in state_dict.items():
         new_key = key
         for old_prefix, new_prefix in replacements.items():
