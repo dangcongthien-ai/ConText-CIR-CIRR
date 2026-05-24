@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import os
+import warnings
+from pathlib import Path
+
 import torch
 from torch import nn
 from transformers import CLIPTextModel, CLIPTokenizerFast, CLIPVisionModel
@@ -13,6 +17,55 @@ def _last_hidden_state(outputs) -> torch.Tensor:
     return outputs[0]
 
 
+def _safe_cache_name(repo_id: str) -> str:
+    return "".join(char if char.isalnum() or char in "._-" else "_" for char in repo_id)
+
+
+def _tokenizer_cache_dir(backbone: str) -> Path:
+    base_dir = Path(os.environ.get("CIR_PIPELINE_TOKENIZER_CACHE", Path.home() / ".cache" / "cir_pipeline"))
+    return base_dir / "tokenizers" / _safe_cache_name(backbone)
+
+
+def _load_clip_tokenizer(backbone: str) -> CLIPTokenizerFast:
+    if Path(backbone).exists():
+        return CLIPTokenizerFast.from_pretrained(backbone)
+    try:
+        return _load_clip_tokenizer_from_hub_files(backbone)
+    except Exception as hub_files_error:
+        try:
+            return CLIPTokenizerFast.from_pretrained(backbone)
+        except Exception as pretrained_error:
+            raise RuntimeError(
+                f"Could not load CLIP tokenizer for {backbone!r}. "
+                "If this is a HuggingFace Hub 404 for additional_chat_templates, "
+                "upgrade transformers/huggingface_hub or rerun with network access once. "
+                f"Direct tokenizer-file loading failed first with: {hub_files_error}"
+            ) from pretrained_error
+
+
+def _load_clip_tokenizer_from_hub_files(backbone: str) -> CLIPTokenizerFast:
+    from huggingface_hub import hf_hub_download
+
+    cache_dir = _tokenizer_cache_dir(backbone)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    required_files = ("vocab.json", "merges.txt")
+    optional_files = ("tokenizer.json", "tokenizer_config.json", "special_tokens_map.json")
+    for filename in required_files:
+        hf_hub_download(repo_id=backbone, filename=filename, local_dir=cache_dir)
+    for filename in optional_files:
+        try:
+            hf_hub_download(repo_id=backbone, filename=filename, local_dir=cache_dir)
+        except Exception:
+            continue
+    try:
+        return CLIPTokenizerFast.from_pretrained(str(cache_dir), local_files_only=True)
+    except Exception as exc:
+        warnings.warn(
+            f"Tokenizer files were downloaded to {cache_dir}, but local tokenizer loading failed: {exc}"
+        )
+        raise
+
+
 class CLIPTokenEncoders(nn.Module):
     """Expose CLIP hidden states used by the ConText-style fusion model."""
 
@@ -20,7 +73,7 @@ class CLIPTokenEncoders(nn.Module):
         super().__init__()
         self.vision_model = CLIPVisionModel.from_pretrained(backbone, use_safetensors=True)
         self.text_model = CLIPTextModel.from_pretrained(backbone, use_safetensors=True)
-        self.tokenizer = CLIPTokenizerFast.from_pretrained(backbone)
+        self.tokenizer = _load_clip_tokenizer(backbone)
         self.image_embedding_dim = int(self.vision_model.config.hidden_size)
         self.text_embedding_dim = int(self.text_model.config.hidden_size)
 
