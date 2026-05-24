@@ -157,6 +157,16 @@ Create CIRR test1 submission:
 python scripts/make_cirr_submission.py --config configs/cirr_context_cir.yaml --checkpoint checkpoints/context_cir_cirr_baseline/best.ckpt
 ```
 
+Export noun phrases for the full dataset:
+
+```bash
+python scripts/export_noun_phrases.py --config configs/cirr_context_cir.yaml --split all --backend both --per_backend_dirs
+```
+
+This writes per-backend files under `outputs/noun_phrases` and compatibility
+copies such as `outputs/stanza/stanza_output_val.json` and
+`outputs/regex/regex_output_val.json`.
+
 ## File And Folder Purpose
 
 | Path | Purpose |
@@ -190,6 +200,7 @@ python scripts/make_cirr_submission.py --config configs/cirr_context_cir.yaml --
 | `scripts/build_faiss_index.py` | CLI FAISS index builder. |
 | `scripts/retrieve.py` | CLI image plus text retrieval. |
 | `scripts/retrieve_app.py` | FastAPI browser demo for image plus text retrieval. |
+| `scripts/export_noun_phrases.py` | Export Stanza/regex noun phrases for full CIRR splits. |
 | `scripts/make_cirr_submission.py` | Create CIRR test1 recall and recall_subset JSON submissions. |
 | `scripts/inspect_cirr_dataset.py` | CLI dataset inspection. |
 | `tests/` | Unit tests for dataset, losses, and FAISS. |
