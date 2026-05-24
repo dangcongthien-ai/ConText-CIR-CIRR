@@ -40,6 +40,16 @@ def search_index(
 ) -> list[dict[str, Any]]:
     index = FaissIndex.load(index_path)
     mapping = load_mapping(mapping_path)
+    return search_loaded_index(index, mapping, query_embedding, top_k, reference_image_name)
+
+
+def search_loaded_index(
+    index: FaissIndex,
+    mapping: list[dict[str, Any]],
+    query_embedding: np.ndarray,
+    top_k: int,
+    reference_image_name: str | None = None,
+) -> list[dict[str, Any]]:
     search_k = top_k + 10 if reference_image_name else top_k
     result = index.search(query_embedding, search_k)
     rows: list[dict[str, Any]] = []

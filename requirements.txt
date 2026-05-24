@@ -13,6 +13,9 @@ tqdm
 rich
 pydantic
 python-dotenv
+fastapi
+uvicorn
+python-multipart
 stanza
 nltk
 pytest

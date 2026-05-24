@@ -142,11 +142,14 @@ Build FAISS index:
 python scripts/build_faiss_index.py --config configs/cirr_context_cir.yaml --checkpoint checkpoints/context_cir_cirr_baseline/best.ckpt --split val
 ```
 
-Retrieve:
+Run the browser retrieval demo:
 
 ```bash
-python scripts/retrieve.py --config configs/cirr_context_cir.yaml --checkpoint checkpoints/context_cir_cirr_baseline/best.ckpt --index outputs/faiss/cirr_val/index.faiss --mapping outputs/faiss/cirr_val/mapping.json --query_image sample.png --text "make the scene brighter" --top_k 10
+python scripts/retrieve_app.py --config configs/cirr_context_cir.yaml --checkpoint checkpoints/context_cir_cirr_baseline/best.ckpt --split val
 ```
+
+Then open `http://127.0.0.1:8000`. If your FAISS files live outside the default
+`outputs/faiss/cirr_val` folder, pass `--index` and `--mapping` explicitly.
 
 Create CIRR test1 submission:
 
@@ -185,7 +188,8 @@ python scripts/make_cirr_submission.py --config configs/cirr_context_cir.yaml --
 | `scripts/train.py` | CLI training entrypoint. |
 | `scripts/validate.py` | CLI checkpoint validation. |
 | `scripts/build_faiss_index.py` | CLI FAISS index builder. |
-| `scripts/retrieve.py` | CLI image plus text retrieval demo. |
+| `scripts/retrieve.py` | CLI image plus text retrieval. |
+| `scripts/retrieve_app.py` | FastAPI browser demo for image plus text retrieval. |
 | `scripts/make_cirr_submission.py` | Create CIRR test1 recall and recall_subset JSON submissions. |
 | `scripts/inspect_cirr_dataset.py` | CLI dataset inspection. |
 | `tests/` | Unit tests for dataset, losses, and FAISS. |
