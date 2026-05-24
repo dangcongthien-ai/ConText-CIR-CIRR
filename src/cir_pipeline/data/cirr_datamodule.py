@@ -22,11 +22,15 @@ class CIRRDataModule(pl.LightningDataModule if pl else object):
     def __init__(self, cfg: AppConfig) -> None:
         super().__init__()
         self.cfg = cfg
-        self.noun_parser = NounPhraseParser(
-            max_phrases=cfg.loss.max_noun_phrases,
-            backend=cfg.data.noun_phrase_backend,
-            stanza_resources_dir=cfg.data.stanza_resources_dir,
-            stanza_download_method=cfg.data.stanza_download_method,
+        self.noun_parser = (
+            None
+            if cfg.data.noun_phrase_backend == "none" or cfg.loss.lambda_cc <= 0
+            else NounPhraseParser(
+                max_phrases=cfg.loss.max_noun_phrases,
+                backend=cfg.data.noun_phrase_backend,
+                stanza_resources_dir=cfg.data.stanza_resources_dir,
+                stanza_download_method=cfg.data.stanza_download_method,
+            )
         )
         self.train_dataset: CIRRDataset | None = None
         self.val_dataset: CIRRDataset | None = None

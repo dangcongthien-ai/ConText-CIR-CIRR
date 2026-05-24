@@ -167,8 +167,8 @@ def _require(condition: bool, message: str) -> None:
 def _validate_data_config(cfg: DataConfig) -> None:
     _require(cfg.dataset == "cirr", "Only data.dataset='cirr' is supported.")
     _require(
-        cfg.noun_phrase_backend in {"auto", "stanza", "nltk", "regex"},
-        "data.noun_phrase_backend must be one of: auto, stanza, nltk, regex.",
+        cfg.noun_phrase_backend in {"auto", "stanza", "nltk", "regex", "none"},
+        "data.noun_phrase_backend must be one of: auto, stanza, nltk, regex, none.",
     )
     _require(
         cfg.stanza_download_method in {"none", "reuse_resources", "download_resources"},

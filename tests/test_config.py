@@ -27,3 +27,11 @@ def test_default_config_loads():
     assert data["train"]["accumulate_grad_batches"] == 1
     assert data["train"]["early_stopping_patience"] == 3
     assert math.isclose(data["train"]["early_stopping_min_delta"], 0.005)
+
+
+def test_no_cc_config_loads():
+    cfg = load_config("configs/cirr_context_cir_no_cc.yaml")
+    data = config_to_dict(cfg)
+    assert data["data"]["noun_phrase_backend"] == "none"
+    assert math.isclose(data["loss"]["lambda_cc"], 0.0)
+    assert data["loss"]["max_noun_phrases"] == 0

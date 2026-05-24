@@ -52,7 +52,7 @@ class NounPhraseParser:
 
     def extract(self, text: str) -> list[str]:
         text = text.strip()
-        if not text:
+        if not text or self.backend == "none":
             return []
         for backend, extractor in self._backend_extractors():
             phrases = extractor(text)
