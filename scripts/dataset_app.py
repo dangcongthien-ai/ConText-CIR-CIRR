@@ -61,17 +61,26 @@ def _split_options(state: DatasetState, selected_split: str) -> str:
     return "\n".join(rows)
 
 
-def _find_sample(dataset: CIRRDataset, pair_id: str | None) -> dict[str, Any]:
+def _sample_by_pair_id(dataset: CIRRDataset, pair_id: str | None) -> dict[str, Any] | None:
     if pair_id:
         for sample in dataset.samples:
             if str(sample.get("pair_id")) == str(pair_id):
                 return dict(sample)
+    return None
+
+
+def _find_sample(dataset: CIRRDataset, pair_id: str | None) -> dict[str, Any]:
+    sample = _sample_by_pair_id(dataset, pair_id)
+    if sample is not None:
+        return sample
+    if pair_id:
+        return {}
     return dict(dataset.samples[0]) if dataset.samples else {}
 
 
-def _sample_cards(dataset: CIRRDataset, split: str, selected_pair_id: str | None, limit: int) -> str:
+def _sample_cards(samples: list[dict[str, Any]], split: str, selected_pair_id: str | None) -> str:
     cards = []
-    for sample in dataset.samples[:limit]:
+    for sample in samples:
         pair_id = str(sample.get("pair_id"))
         selected = " selected" if pair_id == str(selected_pair_id) else ""
         ref_name = str(sample.get("reference_name") or "")
@@ -82,7 +91,7 @@ def _sample_cards(dataset: CIRRDataset, split: str, selected_pair_id: str | None
             else '<div class="thumb-empty">no target</div>'
         )
         cards.append(
-            f"""<a class="sample-card{selected}" href="/?split={quote(split)}&pair_id={quote(pair_id)}">
+            f"""<a class="sample-card{selected}" data-pair-id="{html.escape(pair_id)}" href="/?split={quote(split)}&pair_id={quote(pair_id)}">
   <div class="thumbs">
     <img src="{_image_url(split, ref_name)}" alt="{html.escape(ref_name)}">
     {target}
@@ -96,6 +105,10 @@ def _sample_cards(dataset: CIRRDataset, split: str, selected_pair_id: str | None
     return "\n".join(cards)
 
 
+def _visible_samples(dataset: CIRRDataset, selected_pair_id: str | None, limit: int) -> list[dict[str, Any]]:
+    return [dict(sample) for sample in dataset.samples[:limit]]
+
+
 def _detail(dataset: CIRRDataset, split: str, sample: dict[str, Any]) -> str:
     if not sample:
         return '<div class="empty">No samples</div>'
@@ -106,12 +119,12 @@ def _detail(dataset: CIRRDataset, split: str, sample: dict[str, Any]) -> str:
     target_panel = (
         f"""<figure>
   <img src="{_image_url(split, target_name)}" alt="{html.escape(target_name)}">
-  <figcaption>{html.escape(target_name)}</figcaption>
+  <figcaption>Target: {html.escape(target_name)}</figcaption>
 </figure>"""
         if target_name
         else """<figure>
   <div class="missing-target">No target in this split</div>
-  <figcaption>target</figcaption>
+  <figcaption>Target</figcaption>
 </figure>"""
     )
     subset = ", ".join(str(item) for item in sample.get("img_set", [])[:6])
@@ -124,7 +137,7 @@ def _detail(dataset: CIRRDataset, split: str, sample: dict[str, Any]) -> str:
 <div class="flow">
   <figure>
     <img src="{_image_url(split, ref_name)}" alt="{html.escape(ref_name)}">
-    <figcaption>{html.escape(ref_name)}</figcaption>
+    <figcaption>Reference: {html.escape(ref_name)}</figcaption>
   </figure>
   <div class="caption-box">{html.escape(str(sample.get("caption", "")))}</div>
   {target_panel}
@@ -135,13 +148,29 @@ def _detail(dataset: CIRRDataset, split: str, sample: dict[str, Any]) -> str:
 </div>"""
 
 
+def _missing_detail(split: str, pair_id: str) -> str:
+    return f"""<div class="empty">
+  <strong>Không tìm thấy pair_id {html.escape(pair_id)}</strong>
+  <div class="hint">Split hiện tại là {html.escape(split)}. Hãy kiểm tra lại số pair_id hoặc đổi split.</div>
+</div>"""
+
+
 def _page(state: DatasetState, split: str, pair_id: str | None) -> str:
     if split not in state.datasets:
         split = next(iter(state.datasets))
     dataset = state.datasets[split]
     sample = _find_sample(dataset, pair_id)
     selected_pair_id = str(sample.get("pair_id", "")) if sample else None
-    cards = _sample_cards(dataset, split, selected_pair_id, state.limit)
+    visible_samples = _visible_samples(dataset, selected_pair_id, state.limit)
+    cards = _sample_cards(visible_samples, split, selected_pair_id)
+    requested_value = pair_id if pair_id and not selected_pair_id else selected_pair_id
+    selected_value = html.escape(requested_value or "")
+    detail_html = _detail(dataset, split, sample) if sample else _missing_detail(split, str(pair_id or ""))
+    list_title = (
+        f"Visible {len(visible_samples):,} / {len(dataset):,} pairs"
+        if len(visible_samples) < len(dataset)
+        else f"{len(dataset):,} pairs"
+    )
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -189,16 +218,19 @@ def _page(state: DatasetState, split: str, pair_id: str | None) -> str:
       align-items: center;
       gap: 8px;
     }}
-    select, button {{
+    select, input, button {{
       height: 36px;
       border-radius: 6px;
       font: inherit;
       font-size: 14px;
     }}
-    select {{
+    select, input {{
       border: 1px solid var(--line);
       background: #fff;
       padding: 0 10px;
+    }}
+    input {{
+      width: 116px;
     }}
     button {{
       border: 0;
@@ -229,6 +261,21 @@ def _page(state: DatasetState, split: str, pair_id: str | None) -> str:
       display: grid;
       gap: 10px;
     }}
+    .list-head {{
+      position: sticky;
+      top: -12px;
+      z-index: 1;
+      margin: -12px -12px 2px;
+      padding: 10px 12px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }}
     .sample-card {{
       color: inherit;
       text-decoration: none;
@@ -242,6 +289,7 @@ def _page(state: DatasetState, split: str, pair_id: str | None) -> str:
     }}
     .sample-card.selected {{
       border-color: var(--accent);
+      background: #f1fbf9;
       box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.12);
     }}
     .thumbs {{
@@ -319,6 +367,7 @@ def _page(state: DatasetState, split: str, pair_id: str | None) -> str:
       font-size: 12px;
       font-weight: 700;
       overflow-wrap: anywhere;
+      background: #fff;
     }}
     .caption-box {{
       min-height: 96px;
@@ -350,11 +399,25 @@ def _page(state: DatasetState, split: str, pair_id: str | None) -> str:
       color: var(--muted);
       text-align: center;
     }}
+    .empty strong {{
+      display: block;
+      color: #b42318;
+      font-size: 15px;
+      margin-bottom: 8px;
+    }}
+    .hint {{
+      color: var(--muted);
+      font-size: 13px;
+    }}
     @media (max-width: 940px) {{
       .bar {{ flex-direction: column; align-items: flex-start; }}
       main {{ grid-template-columns: 1fr; }}
-      .list {{ max-height: none; }}
+      .list {{ max-height: 320px; }}
       .flow {{ grid-template-columns: 1fr; }}
+      figure {{
+        width: min(100%, 420px);
+        margin: 0 auto;
+      }}
     }}
   </style>
 </head>
@@ -362,16 +425,99 @@ def _page(state: DatasetState, split: str, pair_id: str | None) -> str:
   <header>
     <div class="bar">
       <h1>CIRR Dataset Viewer</h1>
-      <form method="get" action="/">
+      <form id="sample-form" method="get" action="/">
         <select name="split">{_split_options(state, split)}</select>
+        <input id="pair-input" name="pair_id" value="{selected_value}" placeholder="pair_id">
         <button type="submit">Open</button>
       </form>
     </div>
   </header>
   <main>
-    <section class="panel list">{cards}</section>
-    <section class="panel detail">{_detail(dataset, split, sample)}</section>
+    <section class="panel list">
+      <div class="list-head">
+        <span>{html.escape(list_title)}</span>
+        <span id="selected-label">selected #{selected_value}</span>
+      </div>
+      {cards}
+    </section>
+    <section id="detail-panel" class="panel detail">{detail_html}</section>
   </main>
+  <script>
+    const currentSplit = "{html.escape(split)}";
+    const form = document.querySelector("#sample-form");
+    const splitInput = form.querySelector("select[name='split']");
+    const pairInput = document.querySelector("#pair-input");
+    const detailPanel = document.querySelector("#detail-panel");
+    const selectedLabel = document.querySelector("#selected-label");
+
+    function setSelectedCard(pairId) {{
+      document.querySelectorAll(".sample-card").forEach((card) => {{
+        card.classList.toggle("selected", card.dataset.pairId === pairId);
+      }});
+    }}
+
+    function escapeHtml(value) {{
+      const replacements = {{ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }};
+      return String(value).replace(/[&<>"']/g, (char) => replacements[char]);
+    }}
+
+    function showMissing(message) {{
+      detailPanel.innerHTML = `<div class="empty"><strong>${{escapeHtml(message)}}</strong><div class="hint">Không đổi vị trí scroll. Bạn có thể nhập pair_id khác hoặc đổi split.</div></div>`;
+    }}
+
+    async function openPair(pairId, pushState = true) {{
+      const cleanedPairId = String(pairId || "").trim();
+      const selectedSplit = splitInput.value;
+      if (selectedSplit !== currentSplit) {{
+        const params = new URLSearchParams({{ split: selectedSplit }});
+        if (cleanedPairId) params.set("pair_id", cleanedPairId);
+        window.location.href = `/?${{params.toString()}}`;
+        return;
+      }}
+      if (!cleanedPairId) {{
+        showMissing("Bạn chưa nhập pair_id.");
+        return;
+      }}
+      try {{
+        const params = new URLSearchParams({{ split: currentSplit, pair_id: cleanedPairId }});
+        const response = await fetch(`/api/detail?${{params.toString()}}`);
+        if (!response.ok) {{
+          const payload = await response.json().catch(() => ({{ detail: "Không tìm thấy sample." }}));
+          throw new Error(payload.detail || "Không tìm thấy sample.");
+        }}
+        const payload = await response.json();
+        detailPanel.innerHTML = payload.html;
+        pairInput.value = payload.pair_id;
+        selectedLabel.textContent = `selected #${{payload.pair_id}}`;
+        setSelectedCard(payload.pair_id);
+        if (pushState) {{
+          const urlParams = new URLSearchParams({{ split: currentSplit, pair_id: payload.pair_id }});
+          history.pushState({{ pair_id: payload.pair_id }}, "", `/?${{urlParams.toString()}}`);
+        }}
+      }} catch (error) {{
+        selectedLabel.textContent = `selected #${{cleanedPairId}}`;
+        setSelectedCard("");
+        showMissing(error.message);
+      }}
+    }}
+
+    document.querySelectorAll(".sample-card").forEach((card) => {{
+      card.addEventListener("click", (event) => {{
+        event.preventDefault();
+        openPair(card.dataset.pairId);
+      }});
+    }});
+
+    form.addEventListener("submit", (event) => {{
+      event.preventDefault();
+      openPair(pairInput.value);
+    }});
+
+    window.addEventListener("popstate", () => {{
+      const params = new URLSearchParams(window.location.search);
+      openPair(params.get("pair_id") || "", false);
+    }});
+  </script>
 </body>
 </html>"""
 
@@ -389,7 +535,21 @@ def create_app(config_path: str | Path, splits: list[str], limit: int) -> FastAP
     def sample_api(split: str = Query("val"), pair_id: str | None = Query(None)) -> JSONResponse:
         if split not in state.datasets:
             raise HTTPException(status_code=404, detail=f"Unknown split: {split}")
-        return JSONResponse(_find_sample(state.datasets[split], pair_id))
+        dataset = state.datasets[split]
+        sample = _sample_by_pair_id(dataset, pair_id) if pair_id else _find_sample(dataset, None)
+        if sample is None:
+            raise HTTPException(status_code=404, detail=f"Không tìm thấy pair_id {pair_id} trong split {split}.")
+        return JSONResponse(sample)
+
+    @app.get("/api/detail")
+    def detail_api(split: str = Query("val"), pair_id: str = Query(...)) -> JSONResponse:
+        if split not in state.datasets:
+            raise HTTPException(status_code=404, detail=f"Unknown split: {split}")
+        dataset = state.datasets[split]
+        sample = _sample_by_pair_id(dataset, pair_id)
+        if sample is None:
+            raise HTTPException(status_code=404, detail=f"Không tìm thấy pair_id {pair_id} trong split {split}.")
+        return JSONResponse({"pair_id": str(sample["pair_id"]), "sample": sample, "html": _detail(dataset, split, sample)})
 
     @app.get("/image/{split}/{image_name}")
     def image(split: str, image_name: str) -> FileResponse:
