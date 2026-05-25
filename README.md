@@ -9,7 +9,7 @@ Dự án hiện có 3 biến thể train chính:
 | CC | `configs/cirr_context_cir_cc.yaml` | Text Concept-Consistency only | `cirr_vitb32_cc` |
 | CL+CC | `configs/cirr_context_cir_cl_cc.yaml` | Contrastive + Text Concept-Consistency | `cirr_vitb32_cl_cc` |
 
-`configs/cirr_context_cir.yaml` đang giữ cùng hướng CL+CC để các lệnh cũ vẫn chạy được.
+Các config cũ đã được bỏ để tránh nhầm hướng chạy.
 
 ## 1. Chuẩn Bị Môi Trường
 

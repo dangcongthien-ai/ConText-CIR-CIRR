@@ -78,7 +78,7 @@ class HeatmapState:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a heatmap UI for CIRR Text-CC and contrastive ablations.")
-    parser.add_argument("--config", default="configs/cirr_context_cir.yaml")
+    parser.add_argument("--config", default="configs/cirr_context_cir_cl_cc.yaml")
     parser.add_argument("--split", default="val", choices=["train", "val", "test1"])
     parser.add_argument("--cl_checkpoint", default=None)
     parser.add_argument("--cc_checkpoint", default=None)

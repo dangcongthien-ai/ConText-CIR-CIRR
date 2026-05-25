@@ -28,7 +28,7 @@ class DatasetState:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a CIRR dataset visualization UI.")
-    parser.add_argument("--config", default="configs/cirr_context_cir.yaml")
+    parser.add_argument("--config", default="configs/cirr_context_cir_cl_cc.yaml")
     parser.add_argument("--splits", nargs="+", choices=["train", "val", "test1"], default=["train", "val", "test1"])
     parser.add_argument("--limit", type=int, default=300)
     parser.add_argument("--host", default="127.0.0.1")

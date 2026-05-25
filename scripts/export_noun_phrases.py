@@ -23,7 +23,7 @@ PLACEHOLDER_RE = re.compile(r"^\s*\[cr\d+\]\s*", re.IGNORECASE)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Export noun phrases for CIRR captions with Stanza and/or regex.")
-    parser.add_argument("--config", default="configs/cirr_context_cir.yaml")
+    parser.add_argument("--config", default="configs/cirr_context_cir_cl_cc.yaml")
     parser.add_argument("--split", default="all", choices=[*SPLITS, "all"])
     parser.add_argument("--backend", default="both", choices=["stanza", "regex", "both"])
     parser.add_argument("--output_dir", default="outputs/noun_phrases")

@@ -6,7 +6,7 @@ from cir_pipeline.config import config_to_dict, load_config
 
 
 def test_default_config_loads():
-    cfg = load_config("configs/cirr_context_cir.yaml")
+    cfg = load_config("configs/cirr_context_cir_cl_cc.yaml")
     data = config_to_dict(cfg)
     assert data["project"]["name"] == "CIR_Pipeline"
     assert data["data"]["metadata_root"] == "CIRR/cirr"
@@ -30,16 +30,6 @@ def test_default_config_loads():
     assert math.isclose(data["train"]["early_stopping_min_delta"], 0.005)
     assert data["train"]["save_top_k"] == 1
     assert data["logger"]["experiment_name"] == "cirr_vitb32_cl_cc"
-
-
-def test_no_cc_config_loads():
-    cfg = load_config("configs/cirr_context_cir_no_cc.yaml")
-    data = config_to_dict(cfg)
-    assert data["data"]["noun_phrase_backend"] == "none"
-    assert math.isclose(data["loss"]["lambda_cont"], 1.0)
-    assert math.isclose(data["loss"]["lambda_cc"], 0.0)
-    assert data["loss"]["max_noun_phrases"] == 0
-
 
 def test_variant_configs_load():
     variants = {

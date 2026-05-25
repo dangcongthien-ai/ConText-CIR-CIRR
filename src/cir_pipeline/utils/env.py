@@ -13,7 +13,7 @@ def find_project_root(start: str | Path | None = None) -> Path:
     if current.is_file():
         current = current.parent
     for path in (current, *current.parents):
-        if (path / "configs" / "cirr_context_cir.yaml").exists() and (path / "src").exists():
+        if (path / "configs" / "cirr_context_cir_cl_cc.yaml").exists() and (path / "src").exists():
             return path
     return current
 
