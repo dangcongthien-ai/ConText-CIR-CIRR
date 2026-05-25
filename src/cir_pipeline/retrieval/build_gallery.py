@@ -59,6 +59,7 @@ def build_gallery_index(
     save_mapping(mapping, mapping_path)
     write_json(
         {
+            "run_name": cfg.logger.experiment_name,
             "model_checkpoint": str(checkpoint_path),
             "embedding_dim": int(embeddings_np.shape[1]),
             "created_at": datetime.now(timezone.utc).isoformat(),

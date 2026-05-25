@@ -51,6 +51,7 @@ class ModelConfig:
 @dataclass
 class LossConfig:
     temperature: float = 0.07
+    lambda_cont: float = 1.0
     lambda_cc: float = 0.08
     epsilon_cc: float = 0.05
     max_noun_phrases: int = 10
@@ -76,7 +77,7 @@ class TrainConfig:
     accumulate_grad_batches: int = 1
     early_stopping_patience: int = 0
     early_stopping_min_delta: float = 0.0
-    save_top_k: int = 3
+    save_top_k: int = 1
     monitor: str = "val/recall@10"
     monitor_mode: str = "max"
 
@@ -87,7 +88,7 @@ class LoggerConfig:
     offline: bool = False
     project_name: str = "ConText-CIR-CIRR"
     workspace: Optional[str] = None
-    experiment_name: str = "context_cir_cirr_baseline"
+    experiment_name: str = "cirr_vitb32_cl_cc"
     log_artifacts: bool = True
 
 
@@ -178,7 +179,9 @@ def _validate_data_config(cfg: DataConfig) -> None:
 
 def _validate_loss_config(cfg: LossConfig) -> None:
     _require(cfg.temperature > 0, "loss.temperature must be > 0.")
+    _require(cfg.lambda_cont >= 0, "loss.lambda_cont must be >= 0.")
     _require(cfg.lambda_cc >= 0, "loss.lambda_cc must be >= 0.")
+    _require(cfg.lambda_cont > 0 or cfg.lambda_cc > 0, "At least one loss weight must be > 0.")
     _require(cfg.query_negative_weight >= 0, "loss.query_negative_weight must be >= 0.")
 
 

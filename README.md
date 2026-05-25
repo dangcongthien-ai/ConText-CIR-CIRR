@@ -1,40 +1,51 @@
-# CIR_Pipeline: ConText-CIR-like CIRR Retrieval
+# CIR_Pipeline
 
-Professional PyTorch Lightning pipeline for Composed Image Retrieval on CIRR.
-The model follows the ConText-CIR idea: encode a query image and modification
-text, fuse visual and text tokens with cross-attention, pool into a shared
-retrieval embedding, and train with contrastive retrieval plus optional Text
-Concept-Consistency loss.
+Pipeline Composed Image Retrieval cho CIRR, dùng backbone `openai/clip-vit-base-patch32`.
+Dự án hiện có 3 biến thể train chính:
 
-## Architecture
+| Variant | Config | Loss | COMET/checkpoint/FAISS name |
+|---|---|---|---|
+| CL | `configs/cirr_context_cir_cl.yaml` | Contrastive retrieval only | `cirr_vitb32_cl` |
+| CC | `configs/cirr_context_cir_cc.yaml` | Text Concept-Consistency only | `cirr_vitb32_cc` |
+| CL+CC | `configs/cirr_context_cir_cl_cc.yaml` | Contrastive + Text Concept-Consistency | `cirr_vitb32_cl_cc` |
 
-Training:
+`configs/cirr_context_cir.yaml` đang giữ cùng hướng CL+CC để các lệnh cũ vẫn chạy được.
 
-1. Query branch computes `r_q = f(I_q, T)` from CLIP visual tokens, CLIP text
-   tokens, cross-attention, and attention pooling.
-2. Target branch computes `r_t = g(I_t)` from the pure CLIP vision encoder.
-3. Query-negative branch computes `r_q_neg = g(I_q)` from the same vision encoder.
-4. Loss is `L_total = L_cont + lambda_cc * L_CC`, where `L_cont` is symmetric
-   InfoNCE over in-batch targets plus query-image negatives, and `L_CC` compares
-   full-caption and isolated noun-phrase attention maps.
+## 1. Chuẩn Bị Môi Trường
 
-The default CIRR config freezes most of the CLIP vision and text encoders, then
-unfreezes only the last two transformer layers from each branch with gradient
-checkpointing. The encoder layers use a much lower learning rate than the
-cross-attention, pooling, and projection layers. Query-image negatives are kept
-as a small weighted penalty instead of being mixed directly into the retrieval
-softmax, so the train objective stays closer to validation retrieval loss.
+Từ thư mục project:
 
-Inference:
+```powershell
+cd D:\1_Documents\Nam_3_HK2\Advanced_Computer_Vision\vscode\CIR_Pipeline
+conda activate AI
+pip install -r requirements.txt
+```
 
-1. Encode every official gallery image as `g(C_i)` with the pure vision branch.
-2. L2-normalize embeddings and store them in a FAISS `IndexFlatIP` by default.
-3. Encode the query as `f(I_q, T)`, search FAISS, and remove the reference
-   image from returned results when it appears in the gallery.
+Nếu dùng COMET, tạo hoặc sửa file `.env` ở thư mục gốc:
 
-## Dataset Layout
+```powershell
+copy .env.example .env
+notepad .env
+```
 
-Expected local layout:
+Nội dung `.env`:
+
+```text
+COMET_API_KEY=your_key
+COMET_WORKSPACE=your_workspace
+COMET_PROJECT_NAME=ConText-CIR-CIRR
+```
+
+Nếu không muốn log COMET, sửa trong YAML:
+
+```yaml
+logger:
+  name: "none"
+```
+
+## 2. Kiểm Tra Dataset
+
+Cấu trúc cần có:
 
 ```text
 CIRR/
@@ -42,202 +53,452 @@ CIRR/
   dev/
   test1/
   cirr/
-    image_splits/split.rc2.train.json
-    image_splits/split.rc2.val.json
-    image_splits/split.rc2.test1.json
-    captions/cap.rc2.train.json
-    captions/cap.rc2.val.json
-    captions/cap.rc2.test1.json
-    captions_ext/cap.ext.rc2.train.json
-    captions_ext/cap.ext.rc2.val.json
-    captions_ext/cap.ext.rc2.test1.json
+    image_splits/
+    captions/
+    captions_ext/
 ```
 
-The pipeline never trains, validates, indexes, or retrieves by scanning image
-folders. It resolves image files only through `image_splits/split.rc2.*.json`.
-This matters because the local image folders may be supersets with extra PNGs
-that do not belong to CIRR rc2 annotations.
+Kiểm tra metadata và ảnh:
 
-Local metadata facts baked into inspection expectations:
-
-| Split | Official images | Caption pairs | Notes |
-|---|---:|---:|---|
-| train | 16,939 | 28,225 | train images are under subfolders |
-| val | 2,297 | 4,181 | metadata `val` maps to local `dev` |
-| test1 | 2,315 | 4,148 | one empty caption is handled safely |
-
-## Setup
-
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
+```powershell
+python scripts/inspect_cirr_dataset.py --config configs/cirr_context_cir_cl_cc.yaml
 ```
 
-If you want GPU FAISS, install a `faiss-gpu` build matching your CUDA setup
-instead of `faiss-cpu`.
+Mở giao diện xem dataset, gồm ảnh query/reference, caption và ảnh target:
 
-The CLIP backbone is loaded with `safetensors` to avoid unsafe `torch.load`
-paths in recent `transformers` versions. If you see a CVE-2025-32434 warning,
-run `pip install safetensors` or upgrade Torch to `>=2.6`.
-
-## COMET
-
-No API key is hardcoded. The easiest setup is to copy the example env file:
-
-```bash
-copy .env.example .env
+```powershell
+python scripts/dataset_app.py --config configs/cirr_context_cir_cl_cc.yaml
 ```
 
-Then edit `.env`:
+Sau đó mở:
 
-```bash
-COMET_API_KEY=your_key
-COMET_WORKSPACE=your_workspace
+```text
+http://127.0.0.1:8002
+```
+
+## 3. Test Nhanh Trước Khi Train
+
+Chạy smoke test 1 batch để kiểm tra pipeline không lỗi:
+
+```powershell
+python scripts/train.py --config configs/cirr_context_cir_cl_cc.yaml --fast_dev_run
+```
+
+Chạy unit tests:
+
+```powershell
+pytest -q
+```
+
+## 4. Train 3 Model
+
+### 4.1. Train CL
+
+```powershell
+python scripts/train.py --config configs/cirr_context_cir_cl.yaml
+```
+
+Checkpoint tốt nhất:
+
+```text
+checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt
+```
+
+COMET run:
+
+```text
+cirr_vitb32_cl
+```
+
+### 4.2. Train CC
+
+```powershell
+python scripts/train.py --config configs/cirr_context_cir_cc.yaml
+```
+
+Checkpoint tốt nhất:
+
+```text
+checkpoints/cirr_vitb32_cc/cirr_vitb32_cc-best.ckpt
+```
+
+COMET run:
+
+```text
+cirr_vitb32_cc
+```
+
+Lưu ý: CC-only là ablation để kiểm tra tác dụng Text-CC. Nó không trực tiếp tối ưu retrieval target như CL, nên kết quả retrieval có thể yếu.
+
+### 4.3. Train CL+CC
+
+```powershell
+python scripts/train.py --config configs/cirr_context_cir_cl_cc.yaml
+```
+
+Checkpoint tốt nhất:
+
+```text
+checkpoints/cirr_vitb32_cl_cc/cirr_vitb32_cl_cc-best.ckpt
+```
+
+COMET run:
+
+```text
+cirr_vitb32_cl_cc
+```
+
+## 5. Validate 3 Model Trên Val
+
+### 5.1. Validate CL
+
+```powershell
+python scripts/validate.py --config configs/cirr_context_cir_cl.yaml --checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --split val
+```
+
+### 5.2. Validate CC
+
+```powershell
+python scripts/validate.py --config configs/cirr_context_cir_cc.yaml --checkpoint checkpoints/cirr_vitb32_cc/cirr_vitb32_cc-best.ckpt --split val
+```
+
+### 5.3. Validate CL+CC
+
+```powershell
+python scripts/validate.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc/cirr_vitb32_cl_cc-best.ckpt --split val
+```
+
+Metrics chính cần so sánh:
+
+```text
+recall@1
+recall@5
+recall@10
+recall@50
+recall_subset@1
+recall_subset@2
+recall_subset@3
+```
+
+## 6. Build FAISS Cho Val Và Test1
+
+FAISS được lưu riêng theo variant:
+
+```text
+outputs/faiss/cirr_vitb32_cl/cirr_val/
+outputs/faiss/cirr_vitb32_cl/cirr_test1/
+outputs/faiss/cirr_vitb32_cc/cirr_val/
+outputs/faiss/cirr_vitb32_cc/cirr_test1/
+outputs/faiss/cirr_vitb32_cl_cc/cirr_val/
+outputs/faiss/cirr_vitb32_cl_cc/cirr_test1/
+```
+
+### 6.1. Build FAISS CL
+
+```powershell
+python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl.yaml --checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --split val
+python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl.yaml --checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --split test1
+```
+
+COMET FAISS logs:
+
+```text
+cirr_vitb32_cl_faiss_val
+cirr_vitb32_cl_faiss_test1
+```
+
+### 6.2. Build FAISS CC
+
+```powershell
+python scripts/build_faiss_index.py --config configs/cirr_context_cir_cc.yaml --checkpoint checkpoints/cirr_vitb32_cc/cirr_vitb32_cc-best.ckpt --split val
+python scripts/build_faiss_index.py --config configs/cirr_context_cir_cc.yaml --checkpoint checkpoints/cirr_vitb32_cc/cirr_vitb32_cc-best.ckpt --split test1
+```
+
+COMET FAISS logs:
+
+```text
+cirr_vitb32_cc_faiss_val
+cirr_vitb32_cc_faiss_test1
+```
+
+### 6.3. Build FAISS CL+CC
+
+```powershell
+python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc/cirr_vitb32_cl_cc-best.ckpt --split val
+python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc/cirr_vitb32_cl_cc-best.ckpt --split test1
+```
+
+COMET FAISS logs:
+
+```text
+cirr_vitb32_cl_cc_faiss_val
+cirr_vitb32_cl_cc_faiss_test1
+```
+
+Mỗi thư mục FAISS có:
+
+```text
+index.faiss
+mapping.json
+metadata.json
+```
+
+## 7. Mở Demo Retrieval
+
+Demo cho phép upload/chọn ảnh query, nhập caption thay đổi, chọn gallery `val` hoặc `test1`, rồi trả ảnh retrieval từ FAISS.
+
+### 7.1. Demo CL
+
+```powershell
+python scripts/retrieve_app.py --config configs/cirr_context_cir_cl.yaml --checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --splits val test1 --port 8000
+```
+
+### 7.2. Demo CC
+
+```powershell
+python scripts/retrieve_app.py --config configs/cirr_context_cir_cc.yaml --checkpoint checkpoints/cirr_vitb32_cc/cirr_vitb32_cc-best.ckpt --splits val test1 --port 8000
+```
+
+### 7.3. Demo CL+CC
+
+```powershell
+python scripts/retrieve_app.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc/cirr_vitb32_cl_cc-best.ckpt --splits val test1 --port 8000
+```
+
+Mở:
+
+```text
+http://127.0.0.1:8000
+```
+
+Nếu chỉ muốn dùng một FAISS index cụ thể:
+
+```powershell
+python scripts/retrieve_app.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc/cirr_vitb32_cl_cc-best.ckpt --split val --index outputs/faiss/cirr_vitb32_cl_cc/cirr_val/index.faiss --mapping outputs/faiss/cirr_vitb32_cl_cc/cirr_val/mapping.json
+```
+
+## 8. Mở Heatmap UI
+
+Heatmap UI show sample bằng thumbnail ảnh, rồi sinh heatmap cho:
+
+```text
+CL
+CC
+CL+CC
+```
+
+Chạy:
+
+```powershell
+python scripts/generate_loss_heatmaps.py --config configs/cirr_context_cir_cl_cc.yaml --split val --port 8001
+```
+
+Mở:
+
+```text
+http://127.0.0.1:8001
+```
+
+Mặc định UI tìm checkpoint:
+
+```text
+checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt
+checkpoints/cirr_vitb32_cc/cirr_vitb32_cc-best.ckpt
+checkpoints/cirr_vitb32_cl_cc/cirr_vitb32_cl_cc-best.ckpt
+```
+
+Nếu checkpoint nằm chỗ khác:
+
+```powershell
+python scripts/generate_loss_heatmaps.py --config configs/cirr_context_cir_cl_cc.yaml --split val --cl_checkpoint path\to\cl.ckpt --cc_checkpoint path\to\cc.ckpt --cl_cc_checkpoint path\to\cl_cc.ckpt
+```
+
+Output heatmap:
+
+```text
+outputs/heatmaps/cl/
+outputs/heatmaps/cc/
+outputs/heatmaps/cl_cc/
+outputs/heatmaps/reports/
+```
+
+## 9. Export Stanza Và Regex Cho Cả Dataset
+
+Xuất noun phrase bằng cả Stanza và regex cho train/val/test1:
+
+```powershell
+python scripts/export_noun_phrases.py --config configs/cirr_context_cir_cl_cc.yaml --split all --backend both --per_backend_dirs
+```
+
+Output chính:
+
+```text
+outputs/noun_phrases/cirr_train_stanza.json
+outputs/noun_phrases/cirr_train_regex.json
+outputs/noun_phrases/cirr_train_stanza_regex.json
+outputs/noun_phrases/cirr_val_stanza.json
+outputs/noun_phrases/cirr_val_regex.json
+outputs/noun_phrases/cirr_val_stanza_regex.json
+outputs/noun_phrases/cirr_test1_stanza.json
+outputs/noun_phrases/cirr_test1_regex.json
+outputs/noun_phrases/cirr_test1_stanza_regex.json
+```
+
+Compatibility outputs:
+
+```text
+outputs/stanza/stanza_output_train.json
+outputs/stanza/stanza_output_val.json
+outputs/stanza/stanza_output_test1.json
+outputs/regex/regex_output_train.json
+outputs/regex/regex_output_val.json
+outputs/regex/regex_output_test1.json
+```
+
+Nếu Stanza chưa có resource:
+
+```powershell
+python scripts/export_noun_phrases.py --config configs/cirr_context_cir_cl_cc.yaml --backend stanza --prepare_stanza
+```
+
+## 10. Tạo Submission CIRR Test1
+
+Thường dùng model tốt nhất theo validation, ví dụ CL+CC:
+
+```powershell
+python scripts/make_cirr_submission.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc/cirr_vitb32_cl_cc-best.ckpt --submission_name cirr_vitb32_cl_cc
+```
+
+Output:
+
+```text
+outputs/submissions/cirr/cirr_vitb32_cl_cc.json
+outputs/submissions/cirr/subset_cirr_vitb32_cl_cc.json
+```
+
+Tạo submission cho CL:
+
+```powershell
+python scripts/make_cirr_submission.py --config configs/cirr_context_cir_cl.yaml --checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --submission_name cirr_vitb32_cl
+```
+
+Tạo submission cho CC:
+
+```powershell
+python scripts/make_cirr_submission.py --config configs/cirr_context_cir_cc.yaml --checkpoint checkpoints/cirr_vitb32_cc/cirr_vitb32_cc-best.ckpt --submission_name cirr_vitb32_cc
+```
+
+## 11. Lệnh Chạy Nhanh Theo Thứ Tự
+
+Nếu muốn chạy trọn bộ từ đầu:
+
+```powershell
+python scripts/inspect_cirr_dataset.py --config configs/cirr_context_cir_cl_cc.yaml
+
+python scripts/train.py --config configs/cirr_context_cir_cl.yaml
+python scripts/train.py --config configs/cirr_context_cir_cc.yaml
+python scripts/train.py --config configs/cirr_context_cir_cl_cc.yaml
+
+python scripts/validate.py --config configs/cirr_context_cir_cl.yaml --checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --split val
+python scripts/validate.py --config configs/cirr_context_cir_cc.yaml --checkpoint checkpoints/cirr_vitb32_cc/cirr_vitb32_cc-best.ckpt --split val
+python scripts/validate.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc/cirr_vitb32_cl_cc-best.ckpt --split val
+
+python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl.yaml --checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --split val
+python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl.yaml --checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --split test1
+python scripts/build_faiss_index.py --config configs/cirr_context_cir_cc.yaml --checkpoint checkpoints/cirr_vitb32_cc/cirr_vitb32_cc-best.ckpt --split val
+python scripts/build_faiss_index.py --config configs/cirr_context_cir_cc.yaml --checkpoint checkpoints/cirr_vitb32_cc/cirr_vitb32_cc-best.ckpt --split test1
+python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc/cirr_vitb32_cl_cc-best.ckpt --split val
+python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc/cirr_vitb32_cl_cc-best.ckpt --split test1
+
+python scripts/dataset_app.py --config configs/cirr_context_cir_cl_cc.yaml --port 8002
+python scripts/generate_loss_heatmaps.py --config configs/cirr_context_cir_cl_cc.yaml --split val --port 8001
+python scripts/retrieve_app.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc/cirr_vitb32_cl_cc-best.ckpt --splits val test1 --port 8000
+```
+
+## 12. File Quan Trọng
+
+| Path | Chức năng |
+|---|---|
+| `configs/cirr_context_cir_cl.yaml` | Config CL-only |
+| `configs/cirr_context_cir_cc.yaml` | Config CC-only |
+| `configs/cirr_context_cir_cl_cc.yaml` | Config CL+CC |
+| `scripts/train.py` | Train model |
+| `scripts/validate.py` | Validate checkpoint trên val |
+| `scripts/build_faiss_index.py` | Build FAISS gallery index |
+| `scripts/retrieve_app.py` | Demo retrieval FastAPI |
+| `scripts/dataset_app.py` | Visualize dataset |
+| `scripts/generate_loss_heatmaps.py` | Visualize heatmap |
+| `scripts/export_noun_phrases.py` | Export Stanza/regex noun phrases |
+| `scripts/make_cirr_submission.py` | Tạo submission JSON |
+| `src/cir_pipeline/engine/train_module.py` | LightningModule và loss tổng |
+| `src/cir_pipeline/models/losses.py` | Contrastive loss và Text-CC loss |
+| `src/cir_pipeline/data/cirr_dataset.py` | Reader CIRR từ metadata chính thức |
+
+## 13. Lỗi Thường Gặp
+
+### COMET không có API key
+
+Nếu không cần COMET:
+
+```yaml
+logger:
+  name: "none"
+```
+
+Nếu cần COMET, kiểm tra `.env`:
+
+```text
+COMET_API_KEY=...
+COMET_WORKSPACE=...
 COMET_PROJECT_NAME=ConText-CIR-CIRR
 ```
 
-The project auto-loads `.env` from the repository root before creating the
-COMET logger. You can also set environment variables manually:
+### Chưa build FAISS nhưng mở retrieval demo
 
-```bash
-set COMET_API_KEY=your_key
-set COMET_WORKSPACE=your_workspace
-set COMET_PROJECT_NAME=ConText-CIR-CIRR
+Build đủ FAISS trước:
+
+```powershell
+python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc/cirr_vitb32_cl_cc-best.ckpt --split val
+python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc/cirr_vitb32_cl_cc-best.ckpt --split test1
 ```
 
-If `logger.name=comet` and `COMET_API_KEY` is missing, training prints a warning
-and continues without crashing. You can also set `logger.name: "tensorboard"` or
-`logger.name: "none"` in the YAML.
+### Stanza lỗi trên Windows
 
-## Commands
+Chuẩn bị resource:
 
-Inspect dataset:
-
-```bash
-python scripts/inspect_cirr_dataset.py --config configs/cirr_context_cir.yaml
+```powershell
+python scripts/export_noun_phrases.py --config configs/cirr_context_cir_cl_cc.yaml --backend stanza --prepare_stanza
 ```
 
-Train smoke run:
+Nếu vẫn lỗi, dùng regex hoặc `--allow_fallback` khi export:
 
-```bash
-python scripts/train.py --config configs/cirr_context_cir.yaml --fast_dev_run
+```powershell
+python scripts/export_noun_phrases.py --config configs/cirr_context_cir_cl_cc.yaml --split all --backend both --allow_fallback
 ```
 
-Train full run:
+### CUDA out of memory
 
-```bash
-python scripts/train.py --config configs/cirr_context_cir.yaml
+Giảm trong YAML:
+
+```yaml
+train:
+  batch_size: 32
+  val_batch_size: 64
+  accumulate_grad_batches: 2
 ```
 
-Validate checkpoint:
+Hoặc giảm số layer trainable:
 
-```bash
-python scripts/validate.py --config configs/cirr_context_cir.yaml --checkpoint checkpoints/context_cir_cirr_baseline/best.ckpt
+```yaml
+model:
+  trainable_vision_layers: 1
+  trainable_text_layers: 1
 ```
 
-Build FAISS index:
+### Checkpoint cũ không load được
 
-```bash
-python scripts/build_faiss_index.py --config configs/cirr_context_cir.yaml --checkpoint checkpoints/context_cir_cirr_baseline/best.ckpt --split val
+Dùng checkpoint đúng với config variant. Ví dụ CL+CC:
+
+```powershell
+python scripts/validate.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc/cirr_vitb32_cl_cc-best.ckpt --split val
 ```
-
-Run the browser retrieval demo:
-
-```bash
-python scripts/retrieve_app.py --config configs/cirr_context_cir.yaml --checkpoint checkpoints/context_cir_cirr_baseline/best.ckpt --split val
-```
-
-Then open `http://127.0.0.1:8000`. If your FAISS files live outside the default
-`outputs/faiss/cirr_val` folder, pass `--index` and `--mapping` explicitly.
-
-Create CIRR test1 submission:
-
-```bash
-python scripts/make_cirr_submission.py --config configs/cirr_context_cir.yaml --checkpoint checkpoints/context_cir_cirr_baseline/best.ckpt
-```
-
-Export noun phrases for the full dataset:
-
-```bash
-python scripts/export_noun_phrases.py --config configs/cirr_context_cir.yaml --split all --backend both --per_backend_dirs
-```
-
-This writes per-backend files under `outputs/noun_phrases` and compatibility
-copies such as `outputs/stanza/stanza_output_val.json` and
-`outputs/regex/regex_output_val.json`.
-
-## File And Folder Purpose
-
-| Path | Purpose |
-|---|---|
-| `configs/cirr_context_cir.yaml` | Full train/eval/retrieval/logger/path config. |
-| `src/cir_pipeline/config.py` | Load and validate config with dataclasses. |
-| `src/cir_pipeline/seed.py` | Seed Python, NumPy, and Torch. |
-| `src/cir_pipeline/data/cirr_dataset.py` | CIRR Dataset reading only official image_splits plus captions. |
-| `src/cir_pipeline/data/cirr_datamodule.py` | Lightning DataModule for train/val/test dataloaders. |
-| `src/cir_pipeline/data/transforms.py` | CLIP resize/crop/normalize image transforms. |
-| `src/cir_pipeline/data/collate.py` | Collate image tensors, captions, noun phrases, pair ids, names, and img_set. |
-| `src/cir_pipeline/data/validate_cirr_files.py` | Read-only metadata/image availability inspection. |
-| `src/cir_pipeline/models/encoders.py` | HuggingFace CLIP image and text token encoders. |
-| `src/cir_pipeline/models/attention.py` | Multi-head cross-attention and learned attention pooling. |
-| `src/cir_pipeline/models/context_cir.py` | Main `ConTextCIR` model with `forward_query`, `encode_gallery`, and attention output. |
-| `src/cir_pipeline/models/losses.py` | InfoNCE retrieval loss and Text Concept-Consistency loss. |
-| `src/cir_pipeline/text/noun_phrase_parser.py` | Noun phrase extraction via Stanza, NLTK, or regex fallback. |
-| `src/cir_pipeline/text/token_alignment.py` | Safe noun phrase to CLIP token index mapping via tokenizer offsets. |
-| `src/cir_pipeline/engine/train_module.py` | LightningModule for train/validation step, optimizer, and scheduler. |
-| `src/cir_pipeline/engine/metrics.py` | Recall@K, RecallSubset@K, and similarity utilities. |
-| `src/cir_pipeline/engine/evaluator.py` | Full-gallery validation retrieval evaluator. |
-| `src/cir_pipeline/engine/comet_logger.py` | COMET/TensorBoard logger creation and artifact helpers. |
-| `src/cir_pipeline/retrieval/faiss_index.py` | FAISS create/save/load/search wrapper. |
-| `src/cir_pipeline/retrieval/build_gallery.py` | Encode gallery images with `g(C_i)` and persist FAISS artifacts. |
-| `src/cir_pipeline/retrieval/search.py` | Encode query `f(I_q,T)`, search FAISS, and remove reference image. |
-| `src/cir_pipeline/utils/io.py` | JSON and filesystem helpers. |
-| `src/cir_pipeline/utils/device.py` | Recursive batch-to-device helper. |
-| `src/cir_pipeline/utils/logging.py` | Logging setup helpers. |
-| `scripts/train.py` | CLI training entrypoint. |
-| `scripts/validate.py` | CLI checkpoint validation. |
-| `scripts/build_faiss_index.py` | CLI FAISS index builder. |
-| `scripts/retrieve.py` | CLI image plus text retrieval. |
-| `scripts/retrieve_app.py` | FastAPI browser demo for image plus text retrieval. |
-| `scripts/export_noun_phrases.py` | Export Stanza/regex noun phrases for full CIRR splits. |
-| `scripts/make_cirr_submission.py` | Create CIRR test1 recall and recall_subset JSON submissions. |
-| `scripts/inspect_cirr_dataset.py` | CLI dataset inspection. |
-| `tests/` | Unit tests for dataset, losses, and FAISS. |
-| `data/README.md` | Dataset placement notes; no raw data is stored here. |
-| `outputs/.gitkeep` | Keeps generated output folder in the project tree. |
-| `checkpoints/.gitkeep` | Keeps checkpoint folder in the project tree. |
-
-## Troubleshooting
-
-`COMET_API_KEY` missing:
-Set COMET env vars, use `logger.offline: true`, or switch to `logger.name:
-"none"`.
-
-Stanza model missing:
-The parser warns and falls back to NLTK or regex. For better noun phrases, run
-`python -c "import stanza; stanza.download('en')"`.
-
-CUDA OOM:
-Lower `train.batch_size` or `train.val_batch_size`, increase
-`train.accumulate_grad_batches`, reduce `model.trainable_vision_layers` to `1`
-or `0`, or keep both `model.trainable_*_layers` at `0` for a fully frozen
-encoder run.
-
-Stanza/NLTK warnings on Windows:
-The default config uses `data.noun_phrase_backend: "regex"` so smoke runs do not
-need NLP model downloads or writes to `AppData`. For better noun phrases, install
-the NLP resources and switch this value to `"auto"` or `"stanza"`.
-
-FAISS install issue:
-Use `pip install faiss-cpu` on CPU machines. For CUDA, install a compatible
-`faiss-gpu` package manually.
-
-Torch/Transformers CVE-2025-32434 load error:
-Install `safetensors` with `pip install safetensors`, then rerun training. The
-code requests `model.safetensors` from HuggingFace instead of `pytorch_model.bin`.
-
-Missing image path:
-Run `python scripts/inspect_cirr_dataset.py --config configs/cirr_context_cir.yaml`.
-The loader expects every image path declared in `image_splits` to exist under
-`data.root`.

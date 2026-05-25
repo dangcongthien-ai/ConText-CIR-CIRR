@@ -54,10 +54,11 @@ def main() -> None:
     callbacks = [
         ModelCheckpoint(
             dirpath=checkpoint_dir,
-            filename="epoch{epoch:03d}",
+            filename=f"{cfg.logger.experiment_name}-best",
             monitor=cfg.train.monitor,
             mode=cfg.train.monitor_mode,
-            save_top_k=cfg.train.save_top_k,
+            save_top_k=1,
+            save_last=False,
             auto_insert_metric_name=False,
         ),
         LearningRateMonitor(logging_interval="step"),
@@ -88,7 +89,7 @@ def main() -> None:
     trainer.fit(module, datamodule=datamodule, ckpt_path=args.resume)
 
     if cfg.logger.log_artifacts:
-        config_copy = Path(cfg.project.output_dir) / "last_config.yaml"
+        config_copy = Path(cfg.project.output_dir) / "run_configs" / f"{cfg.logger.experiment_name}.yaml"
         save_config(cfg, config_copy)
         log_artifact(logger, config_copy)
         best_path = getattr(callbacks[0], "best_model_path", "")

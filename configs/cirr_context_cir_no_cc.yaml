@@ -33,6 +33,7 @@ model:
 
 loss:
   temperature: 0.07
+  lambda_cont: 1.0
   lambda_cc: 0.0
   epsilon_cc: 0.0
   max_noun_phrases: 0
@@ -56,7 +57,7 @@ train:
   accumulate_grad_batches: 1
   early_stopping_patience: 3
   early_stopping_min_delta: 0.005
-  save_top_k: 3
+  save_top_k: 1
   monitor: "val/recall@10"
   monitor_mode: "max"
 
@@ -65,12 +66,12 @@ logger:
   offline: false
   project_name: "ConText-CIR-CIRR"
   workspace: null
-  experiment_name: "context_cir_cirr_no_cc"
+  experiment_name: "cirr_vitb32_cl"
   log_artifacts: true
 
 faiss:
   index_type: "flat_ip"
   top_k: 50
-  output_dir: "outputs/faiss"
+  output_dir: "outputs/faiss/cirr_vitb32_cl"
   hnsw_m: 32
   hnsw_ef_search: 64

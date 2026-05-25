@@ -22,6 +22,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--split", default="val", choices=["train", "val", "test1"])
     parser.add_argument("--output_dir", default=None)
+    parser.add_argument(
+        "--run_name",
+        default=None,
+        help="Optional COMET run name for this FAISS build.",
+    )
     return parser.parse_args()
 
 
@@ -38,6 +43,7 @@ def main() -> None:
     for key, value in paths.items():
         print(f"{key}: {value}")
     if cfg.logger.log_artifacts:
+        cfg.logger.experiment_name = args.run_name or f"{cfg.logger.experiment_name}_faiss_{args.split}"
         logger = build_lightning_logger(cfg)
         log_config(logger, cfg)
         for value in paths.values():

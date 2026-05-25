@@ -54,23 +54,27 @@ class CIRLightningModule(pl.LightningModule if pl else torch.nn.Module):
         captions = [str(text or "") for text in batch["caption"]]
         query_out = self.model.forward_with_attention(reference, captions)
         query_emb = query_out["embeddings"]
-        target_emb = self.model.encode_gallery(target)
-        use_query_negative = self.cfg.loss.use_query_image_negative and include_query_negative
-        query_neg = self.model.encode_gallery(reference) if use_query_negative else None
-        loss_cont = retrieval_contrastive_loss(
-            query_emb,
-            target_emb,
-            query_neg,
-            temperature=self.cfg.loss.temperature,
-            use_query_image_negative=use_query_negative,
-            query_negative_weight=self.cfg.loss.query_negative_weight if include_query_negative else 0.0,
-        )
+        should_compute_contrastive = self.cfg.loss.lambda_cont > 0 or not include_text_cc
+        if should_compute_contrastive:
+            target_emb = self.model.encode_gallery(target)
+            use_query_negative = self.cfg.loss.use_query_image_negative and include_query_negative
+            query_neg = self.model.encode_gallery(reference) if use_query_negative else None
+            loss_cont = retrieval_contrastive_loss(
+                query_emb,
+                target_emb,
+                query_neg,
+                temperature=self.cfg.loss.temperature,
+                use_query_image_negative=use_query_negative,
+                query_negative_weight=self.cfg.loss.query_negative_weight if include_query_negative else 0.0,
+            )
+        else:
+            loss_cont = query_emb.new_zeros(())
         if include_text_cc:
             loss_cc, num_text_cc_pairs = self._compute_text_cc(batch, query_out)
         else:
             loss_cc = query_emb.new_zeros(())
             num_text_cc_pairs = 0
-        loss_total = loss_cont + self.cfg.loss.lambda_cc * loss_cc
+        loss_total = self.cfg.loss.lambda_cont * loss_cont + self.cfg.loss.lambda_cc * loss_cc
         return {
             "loss_total": loss_total,
             "loss_cont": loss_cont,
@@ -142,6 +146,13 @@ class CIRLightningModule(pl.LightningModule if pl else torch.nn.Module):
         self.log("train/loss_cont", losses["loss_cont"], on_step=True, on_epoch=True, batch_size=batch_size)
         self.log("train/loss_cc", losses["loss_cc"], on_step=True, on_epoch=True, batch_size=batch_size)
         self.log(
+            "train/loss_cont_weighted",
+            losses["loss_cont"] * self.cfg.loss.lambda_cont,
+            on_step=True,
+            on_epoch=True,
+            batch_size=batch_size,
+        )
+        self.log(
             "train/loss_cc_weighted",
             losses["loss_cc"] * self.cfg.loss.lambda_cc,
             on_step=True,
@@ -166,10 +177,17 @@ class CIRLightningModule(pl.LightningModule if pl else torch.nn.Module):
         batch_size = int(batch["reference_image"].shape[0])
         self.log(
             "val/loss",
-            losses["loss_total"],
+            losses["loss_cont"],
             on_step=False,
             on_epoch=True,
             prog_bar=True,
+            batch_size=batch_size,
+        )
+        self.log(
+            "val/loss_total_weighted",
+            losses["loss_total"],
+            on_step=False,
+            on_epoch=True,
             batch_size=batch_size,
         )
         return losses
@@ -216,6 +234,8 @@ class CIRLightningModule(pl.LightningModule if pl else torch.nn.Module):
             "use_gradient_checkpointing": float(bool(self.cfg.model.use_gradient_checkpointing)),
             "head_learning_rate": float(self.cfg.train.learning_rate),
             "encoder_learning_rate": float(self.cfg.train.encoder_learning_rate or self.cfg.train.learning_rate),
+            "contrastive_loss_weight": float(self.cfg.loss.lambda_cont),
+            "text_cc_loss_weight": float(self.cfg.loss.lambda_cc),
             "query_negative_weight": float(self.cfg.loss.query_negative_weight),
         }
 

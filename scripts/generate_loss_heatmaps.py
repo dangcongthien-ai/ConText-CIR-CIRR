@@ -33,17 +33,17 @@ from cir_pipeline.utils.io import ensure_dir, write_json
 MODEL_VARIANTS = {
     "cl": {
         "label": "Contrastive loss",
-        "default_checkpoint": None,
+        "default_checkpoint": "checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt",
         "loss_kind": "contrastive",
     },
     "cc": {
         "label": "Text-CC loss",
-        "default_checkpoint": None,
+        "default_checkpoint": "checkpoints/cirr_vitb32_cc/cirr_vitb32_cc-best.ckpt",
         "loss_kind": "cc",
     },
     "cl_cc": {
         "label": "CL + CC",
-        "default_checkpoint": "checkpoints/context_cir_cirr_baseline/epoch011-v1.ckpt",
+        "default_checkpoint": "checkpoints/cirr_vitb32_cl_cc/cirr_vitb32_cl_cc-best.ckpt",
         "loss_kind": "combined",
     },
 }
@@ -170,9 +170,26 @@ def _sample_options(state: HeatmapState, selected_pair_id: str | None = None) ->
     for pair_id, sample in state.samples_by_pair_id.items():
         caption = str(sample.get("caption", ""))
         reference = str(sample.get("reference_name", ""))
-        label = f"{pair_id} | {reference} | {caption[:90]}"
+        target = str(sample.get("target_name") or "")
         selected = " selected" if selected_pair_id and pair_id == selected_pair_id else ""
-        rows.append(f'<option value="{html.escape(pair_id)}"{selected}>{html.escape(label)}</option>')
+        target_html = (
+            f'<img src="/artifact/{quote(_relative_to_root(state.dataset.resolve_image_path(target)), safe="/")}" alt="{html.escape(target)}">'
+            if target
+            else '<div class="sample-empty">no target</div>'
+        )
+        rows.append(
+            f"""<label class="sample-card{selected}">
+  <input type="radio" name="pair_id" value="{html.escape(pair_id)}"{" checked" if selected else ""}>
+  <div class="sample-thumbs">
+    <img src="/artifact/{quote(_relative_to_root(state.dataset.resolve_image_path(reference)), safe="/")}" alt="{html.escape(reference)}">
+    {target_html}
+  </div>
+  <div class="sample-text">
+    <div class="sample-id">#{html.escape(pair_id)}</div>
+    <div class="sample-caption">{html.escape(caption)}</div>
+  </div>
+</label>"""
+        )
     return "\n".join(rows)
 
 
@@ -187,7 +204,7 @@ def _variant_options(state: HeatmapState, selected_variant: str = "cl_cc") -> st
             <label class="variant {status}">
               <input type="radio" name="variant" value="{key}"{checked}>
               <span class="variant-main">{html.escape(slot.label)}</span>
-              <span class="variant-sub">{html.escape(status)} · {html.escape(checkpoint)}</span>
+              <span class="variant-sub">{html.escape(status)} &middot; {html.escape(checkpoint)}</span>
             </label>
             """
         )
@@ -300,7 +317,7 @@ def _page(
       display: grid;
       gap: 12px;
     }}
-    label.field {{
+    .field {{
       display: grid;
       gap: 6px;
       font-size: 13px;
@@ -315,6 +332,64 @@ def _page(
       font: inherit;
       font-size: 14px;
       background: #fff;
+    }}
+    .sample-grid {{
+      max-height: 430px;
+      overflow: auto;
+      display: grid;
+      gap: 8px;
+      padding-right: 2px;
+    }}
+    .sample-card {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px;
+      display: grid;
+      grid-template-columns: 18px 112px 1fr;
+      gap: 8px;
+      cursor: pointer;
+      background: #fff;
+      min-width: 0;
+    }}
+    .sample-card.selected {{
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.12);
+    }}
+    .sample-thumbs {{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }}
+    .sample-thumbs img, .sample-empty {{
+      width: 52px;
+      height: 52px;
+      border-radius: 6px;
+      object-fit: cover;
+      background: #eef2f6;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      font-size: 10px;
+      text-align: center;
+    }}
+    .sample-text {{
+      min-width: 0;
+      display: grid;
+      gap: 4px;
+      align-content: start;
+    }}
+    .sample-id {{
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }}
+    .sample-caption {{
+      font-size: 12px;
+      line-height: 1.3;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
     }}
     .variant-grid {{
       display: grid;
@@ -442,16 +517,15 @@ def _page(
   <header>
     <div class="bar">
       <h1>CIRR Loss Heatmaps</h1>
-      <div class="muted">split={html.escape(state.split)} · device={state.device.type} · samples={len(state.samples_by_pair_id)}</div>
+      <div class="muted">split={html.escape(state.split)} &middot; device={state.device.type} &middot; samples={len(state.samples_by_pair_id)}</div>
     </div>
   </header>
   <main>
     <section class="panel">
       <div class="preview">{preview}</div>
       <form method="post" action="/generate">
-        <label class="field">Sample
-          <select name="pair_id">{_sample_options(state, selected_pair_id)}</select>
-        </label>
+        <div class="field">Sample</div>
+        <div class="sample-grid">{_sample_options(state, selected_pair_id)}</div>
         <div class="variant-grid">{_variant_options(state, selected_variant)}</div>
         <label class="field">Max phrases
           <input name="max_phrases" type="number" min="1" max="12" value="{html.escape(str(result.get("max_phrases", state.cfg.loss.max_noun_phrases or 5)))}">
@@ -461,7 +535,7 @@ def _page(
     </section>
     <section class="panel">
       <div class="sample-meta">
-        <div class="muted">pair_id={html.escape(str(sample.get("pair_id", "")))} · reference={html.escape(str(sample.get("reference_name", "")))} · target={html.escape(str(sample.get("target_name", "")))}</div>
+        <div class="muted">pair_id={html.escape(str(sample.get("pair_id", "")))} &middot; reference={html.escape(str(sample.get("reference_name", "")))} &middot; target={html.escape(str(sample.get("target_name", "")))}</div>
         <div class="caption">{html.escape(str(sample.get("caption", "")))}</div>
         <div class="links">{report_link}</div>
       </div>
