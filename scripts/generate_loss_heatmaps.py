@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import base64
 import html
-import json
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -74,7 +73,7 @@ class HeatmapState:
     noun_parser: NounPhraseParser
     model_slots: dict[str, ModelSlot]
     output_dir: Path
-    stanza_dir: Path
+    report_dir: Path
 
 
 def parse_args() -> argparse.Namespace:
@@ -152,7 +151,7 @@ def _create_state(
         for key in MODEL_VARIANTS
     }
     output_dir = ensure_dir(Path(cfg.project.output_dir) / "heatmaps")
-    stanza_dir = ensure_dir(Path(cfg.project.output_dir) / "stanza")
+    report_dir = ensure_dir(output_dir / "reports")
     return HeatmapState(
         cfg=cfg,
         split=split,
@@ -162,7 +161,7 @@ def _create_state(
         noun_parser=noun_parser,
         model_slots=model_slots,
         output_dir=output_dir,
-        stanza_dir=stanza_dir,
+        report_dir=report_dir,
     )
 
 
@@ -212,7 +211,6 @@ def _page(
     sample = result.get("sample") or {}
     phrases = result.get("phrases") or []
     heatmaps = result.get("heatmaps") or []
-    stanza_json = result.get("stanza_json")
     report_json = result.get("report_json")
     original_url = result.get("reference_url")
 
@@ -230,11 +228,6 @@ def _page(
     unavailable_html = (
         f'<div class="alert">{html.escape(str(unavailable))}</div>'
         if unavailable
-        else ""
-    )
-    stanza_link = (
-        f'<a href="/artifact/{quote(str(stanza_json), safe="/")}">stanza JSON</a>'
-        if stanza_json
         else ""
     )
     report_link = (
@@ -470,7 +463,7 @@ def _page(
       <div class="sample-meta">
         <div class="muted">pair_id={html.escape(str(sample.get("pair_id", "")))} · reference={html.escape(str(sample.get("reference_name", "")))} · target={html.escape(str(sample.get("target_name", "")))}</div>
         <div class="caption">{html.escape(str(sample.get("caption", "")))}</div>
-        <div class="links">{stanza_link} {report_link}</div>
+        <div class="links">{report_link}</div>
       </div>
       <div class="phrases">{phrase_tags}</div>
       {alert}
@@ -489,31 +482,6 @@ def _heatmap_card(row: dict[str, Any]) -> str:
   <img src="{url}" alt="{html.escape(title)}">
   <div class="card-title">{html.escape(title)}</div>
 </article>"""
-
-
-def _write_stanza_json(
-    state: HeatmapState,
-    sample: dict[str, Any],
-    phrases: list[str],
-    variant: str,
-) -> tuple[Path, Path]:
-    pair_id = str(sample["pair_id"])
-    payload = {
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "split": state.split,
-        "variant": variant,
-        "noun_phrase_backend": state.noun_parser.backend,
-        "pair_id": sample["pair_id"],
-        "reference_name": sample["reference_name"],
-        "target_name": sample.get("target_name"),
-        "caption": sample["caption"],
-        "noun_phrases": phrases,
-    }
-    per_sample = state.stanza_dir / f"stanza_output_{variant}_pair_{pair_id}.json"
-    latest = state.stanza_dir / f"stanza_output_{variant}.json"
-    write_json(payload, per_sample)
-    write_json(payload, latest)
-    return per_sample, latest
 
 
 def _relative_to_root(path: Path) -> str:
@@ -738,22 +706,22 @@ def _generate_result(
         raise KeyError(f"Unknown model variant: {variant}")
     sample = dict(state.samples_by_pair_id[pair_id])
     phrases = state.noun_parser.extract(str(sample["caption"]))[:max_phrases]
-    stanza_path, latest_stanza_path = _write_stanza_json(state, sample, phrases, variant)
     slot = state.model_slots[variant]
     model_result = _generate_heatmaps(state, sample, phrases, slot, max_phrases)
     image_path = state.dataset.resolve_image_path(str(sample["reference_name"]))
     result = {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "split": state.split,
         "sample": sample,
         "phrases": phrases,
+        "noun_phrase_backend": state.noun_parser.backend,
         "max_phrases": max_phrases,
         "variant": variant,
         "variant_label": slot.label,
-        "stanza_json": _relative_to_root(stanza_path),
-        "latest_stanza_json": _relative_to_root(latest_stanza_path),
         "reference_image_path": _relative_to_root(image_path),
         **model_result,
     }
-    report_path = state.stanza_dir / f"heatmap_report_{variant}.json"
+    report_path = state.report_dir / f"heatmap_report_{variant}.json"
     write_json(result, report_path)
     result["report_json"] = _relative_to_root(report_path)
     result["reference_url"] = _image_to_data_url(image_path)
