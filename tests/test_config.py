@@ -34,7 +34,6 @@ def test_default_config_loads():
 def test_variant_configs_load():
     variants = {
         "configs/cirr_context_cir_cl.yaml": ("cirr_vitb32_cl", 1.0, 0.0, "none"),
-        "configs/cirr_context_cir_cc.yaml": ("cirr_vitb32_cc", 0.0, 1.0, "stanza"),
         "configs/cirr_context_cir_cl_cc.yaml": ("cirr_vitb32_cl_cc", 1.0, 0.2, "stanza"),
     }
     for path, (experiment_name, lambda_cont, lambda_cc, backend) in variants.items():

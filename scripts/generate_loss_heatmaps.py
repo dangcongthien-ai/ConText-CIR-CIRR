@@ -7,7 +7,7 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,11 +35,6 @@ MODEL_VARIANTS = {
         "label": "Contrastive loss",
         "default_checkpoint": "checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt",
         "loss_kind": "contrastive",
-    },
-    "cc": {
-        "label": "Text-CC loss",
-        "default_checkpoint": "checkpoints/cirr_vitb32_cc/cirr_vitb32_cc-best.ckpt",
-        "loss_kind": "cc",
     },
     "cl_cc": {
         "label": "CL + CC",
@@ -81,7 +76,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", default="configs/cirr_context_cir_cl_cc.yaml")
     parser.add_argument("--split", default="val", choices=["train", "val", "test1"])
     parser.add_argument("--cl_checkpoint", default=None)
-    parser.add_argument("--cc_checkpoint", default=None)
     parser.add_argument(
         "--cl_cc_checkpoint",
         default=MODEL_VARIANTS["cl_cc"]["default_checkpoint"],
@@ -644,7 +638,6 @@ def _compute_loss_for_variant(
     slot: ModelSlot,
     query_out: dict[str, Any],
     iso_out: dict[str, Any] | None,
-    image_tensor: torch.Tensor,
     target_tensor: torch.Tensor | None,
     full_token_indices: list[list[int]],
     iso_token_indices: list[list[int]],
@@ -724,7 +717,6 @@ def _generate_heatmaps(
             slot,
             query_out,
             iso_out,
-            image_tensor,
             target_tensor,
             [row[1] for row in valid_rows],
             [row[2] for row in valid_rows],
@@ -819,9 +811,9 @@ def create_app(
 
     @app.post("/generate", response_class=HTMLResponse)
     def generate_page(
-        pair_id: str = Form(...),
-        variant: str = Form("cl_cc"),
-        max_phrases: int = Form(5),
+        pair_id: Annotated[str, Form(...)],
+        variant: Annotated[str, Form()] = "cl_cc",
+        max_phrases: Annotated[int, Form()] = 5,
     ) -> str:
         max_phrases = min(max(int(max_phrases), 1), 12)
         try:
@@ -832,14 +824,20 @@ def create_app(
 
     @app.get("/api/generate")
     def generate_api(
-        pair_id: str = Query(...),
-        variant: str = Query("cl_cc"),
-        max_phrases: int = Query(5),
+        pair_id: Annotated[str, Query(...)],
+        variant: Annotated[str, Query()] = "cl_cc",
+        max_phrases: Annotated[int, Query()] = 5,
     ) -> JSONResponse:
         max_phrases = min(max(int(max_phrases), 1), 12)
         return JSONResponse(_generate_result(state, pair_id, variant, max_phrases))
 
-    @app.get("/artifact/{path:path}")
+    @app.get(
+        "/artifact/{path:path}",
+        responses={
+            403: {"description": "Forbidden"},
+            404: {"description": "Not found"},
+        },
+    )
     def artifact(path: str) -> FileResponse:
         resolved = (ROOT / path).resolve()
         allowed_roots = [ROOT / "outputs", ROOT / "CIRR"]
@@ -873,7 +871,6 @@ def main() -> None:
     args = parse_args()
     checkpoints = {
         "cl": args.cl_checkpoint,
-        "cc": args.cc_checkpoint,
         "cl_cc": args.cl_cc_checkpoint,
     }
     app = create_app(args.config, args.split, checkpoints, args.limit)

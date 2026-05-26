@@ -5,7 +5,7 @@ import html
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -105,11 +105,11 @@ def _sample_cards(samples: list[dict[str, Any]], split: str, selected_pair_id: s
     return "\n".join(cards)
 
 
-def _visible_samples(dataset: CIRRDataset, selected_pair_id: str | None, limit: int) -> list[dict[str, Any]]:
+def _visible_samples(dataset: CIRRDataset, limit: int) -> list[dict[str, Any]]:
     return [dict(sample) for sample in dataset.samples[:limit]]
 
 
-def _detail(dataset: CIRRDataset, split: str, sample: dict[str, Any]) -> str:
+def _detail(split: str, sample: dict[str, Any]) -> str:
     if not sample:
         return '<div class="empty">No samples</div>'
     pair_id = str(sample.get("pair_id", ""))
@@ -161,11 +161,11 @@ def _page(state: DatasetState, split: str, pair_id: str | None) -> str:
     dataset = state.datasets[split]
     sample = _find_sample(dataset, pair_id)
     selected_pair_id = str(sample.get("pair_id", "")) if sample else None
-    visible_samples = _visible_samples(dataset, selected_pair_id, state.limit)
+    visible_samples = _visible_samples(dataset, state.limit)
     cards = _sample_cards(visible_samples, split, selected_pair_id)
     requested_value = pair_id if pair_id and not selected_pair_id else selected_pair_id
     selected_value = html.escape(requested_value or "")
-    detail_html = _detail(dataset, split, sample) if sample else _missing_detail(split, str(pair_id or ""))
+    detail_html = _detail(split, sample) if sample else _missing_detail(split, str(pair_id or ""))
     list_title = (
         f"Visible {len(visible_samples):,} / {len(dataset):,} pairs"
         if len(visible_samples) < len(dataset)
@@ -522,47 +522,69 @@ def _page(state: DatasetState, split: str, pair_id: str | None) -> str:
 </html>"""
 
 
+def _require_dataset(state: DatasetState, split: str) -> CIRRDataset:
+    dataset = state.datasets.get(split)
+    if dataset is None:
+        raise HTTPException(status_code=404, detail=f"Unknown split: {split}")
+    return dataset
+
+
+def _sample_response(state: DatasetState, split: str, pair_id: str | None) -> JSONResponse:
+    dataset = _require_dataset(state, split)
+    sample = _sample_by_pair_id(dataset, pair_id) if pair_id else _find_sample(dataset, None)
+    if sample is None:
+        raise HTTPException(status_code=404, detail=f"Không tìm thấy pair_id {pair_id} trong split {split}.")
+    return JSONResponse(sample)
+
+
+def _detail_response(state: DatasetState, split: str, pair_id: str) -> JSONResponse:
+    dataset = _require_dataset(state, split)
+    sample = _sample_by_pair_id(dataset, pair_id)
+    if sample is None:
+        raise HTTPException(status_code=404, detail=f"Không tìm thấy pair_id {pair_id} trong split {split}.")
+    return JSONResponse({"pair_id": str(sample["pair_id"]), "sample": sample, "html": _detail(split, sample)})
+
+
+def _image_response(state: DatasetState, split: str, image_name: str) -> FileResponse:
+    dataset = _require_dataset(state, split)
+    try:
+        path = dataset.resolve_image_path(image_name)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Image file not found: {image_name}")
+    return FileResponse(path)
+
+
 def create_app(config_path: str | Path, splits: list[str], limit: int) -> FastAPI:
     state = _create_state(config_path, splits, limit)
     app = FastAPI(title="CIRR Dataset Viewer")
     app.state.dataset_viewer = state
 
     @app.get("/", response_class=HTMLResponse)
-    def index(split: str = Query("val"), pair_id: str | None = Query(None)) -> str:
+    def index(
+        split: Annotated[str, Query()] = "val",
+        pair_id: Annotated[str | None, Query()] = None,
+    ) -> str:
         return _page(state, split, pair_id)
 
-    @app.get("/api/sample")
-    def sample_api(split: str = Query("val"), pair_id: str | None = Query(None)) -> JSONResponse:
-        if split not in state.datasets:
-            raise HTTPException(status_code=404, detail=f"Unknown split: {split}")
-        dataset = state.datasets[split]
-        sample = _sample_by_pair_id(dataset, pair_id) if pair_id else _find_sample(dataset, None)
-        if sample is None:
-            raise HTTPException(status_code=404, detail=f"Không tìm thấy pair_id {pair_id} trong split {split}.")
-        return JSONResponse(sample)
+    @app.get("/api/sample", responses={404: {"description": "Not found"}})
+    def sample_api(
+        split: Annotated[str, Query()] = "val",
+        pair_id: Annotated[str | None, Query()] = None,
+    ) -> JSONResponse:
+        return _sample_response(state, split, pair_id)
 
-    @app.get("/api/detail")
-    def detail_api(split: str = Query("val"), pair_id: str = Query(...)) -> JSONResponse:
-        if split not in state.datasets:
-            raise HTTPException(status_code=404, detail=f"Unknown split: {split}")
-        dataset = state.datasets[split]
-        sample = _sample_by_pair_id(dataset, pair_id)
-        if sample is None:
-            raise HTTPException(status_code=404, detail=f"Không tìm thấy pair_id {pair_id} trong split {split}.")
-        return JSONResponse({"pair_id": str(sample["pair_id"]), "sample": sample, "html": _detail(dataset, split, sample)})
+    @app.get("/api/detail", responses={404: {"description": "Not found"}})
+    def detail_api(
+        pair_id: Annotated[str, Query(...)],
+        split: Annotated[str, Query()] = "val",
+    ) -> JSONResponse:
+        return _detail_response(state, split, pair_id)
 
-    @app.get("/image/{split}/{image_name}")
+    @app.get("/image/{split}/{image_name}", responses={404: {"description": "Not found"}})
     def image(split: str, image_name: str) -> FileResponse:
-        dataset = state.datasets.get(split)
-        if dataset is None:
-            raise HTTPException(status_code=404, detail=f"Unknown split: {split}")
-        try:
-            path = dataset.resolve_image_path(image_name)
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        if not path.exists():
-            raise HTTPException(status_code=404, detail=f"Image file not found: {image_name}")
-        return FileResponse(path)
+        return _image_response(state, split, image_name)
 
     @app.get("/health")
     def health() -> dict[str, Any]:

@@ -19,6 +19,7 @@ comet/
 CIRR/train/
 CIRR/dev/
 CIRR/test1/
+.stanza_resources
 
 # OS/editor
 .DS_Store

@@ -7,7 +7,7 @@ import sys
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 from urllib.parse import quote
 from uuid import uuid4
 
@@ -473,22 +473,14 @@ def _search(
     return results
 
 
-def create_app(
+def _load_index_sets(
+    cfg: AppConfig,
     *,
-    config_path: str | Path,
-    checkpoint_path: str | Path,
-    index_path: str | Path | None = None,
-    mapping_path: str | Path | None = None,
-    split: str = "val",
-    splits: list[str] | None = None,
-) -> FastAPI:
-    cfg = load_config(config_path)
-    checkpoint = _resolve_project_path(checkpoint_path)
-    _validate_file(checkpoint, "Checkpoint")
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    module = load_cir_module_from_checkpoint(checkpoint, cfg=cfg, map_location=device)
-    model = module.model.to(device).eval()
+    split: str,
+    splits: list[str] | None,
+    index_path: str | Path | None,
+    mapping_path: str | Path | None,
+) -> tuple[dict[str, IndexSet], dict[str, str]]:
     index_sets: dict[str, IndexSet] = {}
     index_errors: dict[str, str] = {}
     for requested_split in _requested_splits(split, splits, index_path):
@@ -501,13 +493,38 @@ def create_app(
             )
         except Exception as exc:
             index_errors[requested_split] = str(exc)
+    return index_sets, index_errors
+
+
+def _create_demo_state(
+    config_path: str | Path,
+    checkpoint_path: str | Path,
+    index_path: str | Path | None = None,
+    mapping_path: str | Path | None = None,
+    split: str = "val",
+    splits: list[str] | None = None,
+) -> DemoState:
+    cfg = load_config(config_path)
+    checkpoint = _resolve_project_path(checkpoint_path)
+    _validate_file(checkpoint, "Checkpoint")
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    module = load_cir_module_from_checkpoint(checkpoint, cfg=cfg, map_location=device)
+    model = module.model.to(device).eval()
+    index_sets, index_errors = _load_index_sets(
+        cfg,
+        split=split,
+        splits=splits,
+        index_path=index_path,
+        mapping_path=mapping_path,
+    )
     if not index_sets:
         raise FileNotFoundError("No FAISS gallery indexes could be loaded.")
 
     upload_dir = _resolve_project_path(Path(cfg.project.output_dir) / "demo_uploads")
     upload_dir.mkdir(parents=True, exist_ok=True)
 
-    state = DemoState(
+    return DemoState(
         cfg=cfg,
         checkpoint=checkpoint,
         upload_dir=upload_dir,
@@ -518,79 +535,134 @@ def create_app(
         lock=threading.Lock(),
     )
 
+
+def _default_gallery_split(state: DemoState, split: str) -> str:
+    return split if split in state.index_sets else next(iter(state.index_sets))
+
+
+def _search_page_response(
+    state: DemoState,
+    query_image: UploadFile,
+    text: str,
+    top_k: int,
+    gallery_split: str,
+    reference_name: str,
+) -> str:
+    image_path = _save_upload(state.upload_dir, query_image)
+    inferred_reference = reference_name.strip() or Path(query_image.filename or image_path.name).stem
+    try:
+        results = _search(state, image_path, text, top_k, gallery_split, inferred_reference)
+        error = None
+    except Exception as exc:
+        results = []
+        error = str(exc)
+    return _page(
+        state=state,
+        results=results,
+        query_preview=_image_data_url(image_path),
+        text=text,
+        reference_name=inferred_reference,
+        gallery_split=gallery_split,
+        top_k=min(max(int(top_k), 1), 50),
+        error=error,
+    )
+
+
+def _search_api_response(
+    state: DemoState,
+    query_image: UploadFile,
+    text: str,
+    top_k: int,
+    gallery_split: str,
+    reference_name: str,
+) -> JSONResponse:
+    image_path = _save_upload(state.upload_dir, query_image)
+    inferred_reference = reference_name.strip() or Path(query_image.filename or image_path.name).stem
+    results = _search(state, image_path, text, top_k, gallery_split, inferred_reference)
+    return JSONResponse({"results": results, "reference_name": inferred_reference, "gallery_split": gallery_split})
+
+
+def _gallery_image_response(state: DemoState, gallery_split: str, image_name: str) -> FileResponse:
+    index_set = state.index_sets.get(gallery_split)
+    if index_set is None:
+        raise HTTPException(status_code=404, detail=f"Gallery split not loaded: {gallery_split}")
+    path = index_set.gallery_paths.get(image_name)
+    if path is None or not path.exists():
+        raise HTTPException(status_code=404, detail=f"Image not found: {image_name}")
+    return FileResponse(path)
+
+
+def _health_payload(state: DemoState) -> dict[str, Any]:
+    return {
+        "status": "ok",
+        "device": state.device.type,
+        "indexes": {
+            split_name: {
+                "gallery_images": len(index_set.gallery_paths),
+                "index": str(index_set.index_path),
+                "mapping": str(index_set.mapping_path),
+            }
+            for split_name, index_set in state.index_sets.items()
+        },
+        "index_errors": state.index_errors,
+    }
+
+
+def create_app(
+    *,
+    config_path: str | Path,
+    checkpoint_path: str | Path,
+    index_path: str | Path | None = None,
+    mapping_path: str | Path | None = None,
+    split: str = "val",
+    splits: list[str] | None = None,
+) -> FastAPI:
+    state = _create_demo_state(
+        config_path=config_path,
+        checkpoint_path=checkpoint_path,
+        index_path=index_path,
+        mapping_path=mapping_path,
+        split=split,
+        splits=splits,
+    )
     app = FastAPI(title="CIR Retrieval Demo")
     app.state.demo = state
 
     @app.get("/", response_class=HTMLResponse)
     def index_page() -> str:
-        default_split = split if split in state.index_sets else next(iter(state.index_sets))
+        default_split = _default_gallery_split(state, split)
         return _page(state=state, gallery_split=default_split)
 
     @app.post("/search", response_class=HTMLResponse)
     def search_page(
-        query_image: UploadFile = File(...),
-        text: str = Form(...),
-        top_k: int = Form(10),
-        gallery_split: str = Form("val"),
-        reference_name: str = Form(""),
+        query_image: Annotated[UploadFile, File(...)],
+        text: Annotated[str, Form(...)],
+        top_k: Annotated[int, Form()] = 10,
+        gallery_split: Annotated[str, Form()] = "val",
+        reference_name: Annotated[str, Form()] = "",
     ) -> str:
-        image_path = _save_upload(state.upload_dir, query_image)
-        inferred_reference = reference_name.strip() or Path(query_image.filename or image_path.name).stem
-        try:
-            results = _search(state, image_path, text, top_k, gallery_split, inferred_reference)
-            error = None
-        except Exception as exc:
-            results = []
-            error = str(exc)
-        return _page(
-            state=state,
-            results=results,
-            query_preview=_image_data_url(image_path),
-            text=text,
-            reference_name=inferred_reference,
-            gallery_split=gallery_split,
-            top_k=min(max(int(top_k), 1), 50),
-            error=error,
-        )
+        return _search_page_response(state, query_image, text, top_k, gallery_split, reference_name)
 
     @app.post("/api/search")
     def search_api(
-        query_image: UploadFile = File(...),
-        text: str = Form(...),
-        top_k: int = Form(10),
-        gallery_split: str = Form("val"),
-        reference_name: str = Form(""),
+        query_image: Annotated[UploadFile, File(...)],
+        text: Annotated[str, Form(...)],
+        top_k: Annotated[int, Form()] = 10,
+        gallery_split: Annotated[str, Form()] = "val",
+        reference_name: Annotated[str, Form()] = "",
     ) -> JSONResponse:
-        image_path = _save_upload(state.upload_dir, query_image)
-        inferred_reference = reference_name.strip() or Path(query_image.filename or image_path.name).stem
-        results = _search(state, image_path, text, top_k, gallery_split, inferred_reference)
-        return JSONResponse({"results": results, "reference_name": inferred_reference, "gallery_split": gallery_split})
+        return _search_api_response(state, query_image, text, top_k, gallery_split, reference_name)
 
-    @app.get("/gallery/{gallery_split}/{image_name}")
+    @app.get(
+        "/gallery/{gallery_split}/{image_name}",
+        responses={404: {"description": "Not found"}},
+    )
     def gallery_image(gallery_split: str, image_name: str) -> FileResponse:
-        index_set = state.index_sets.get(gallery_split)
-        if index_set is None:
-            raise HTTPException(status_code=404, detail=f"Gallery split not loaded: {gallery_split}")
-        path = index_set.gallery_paths.get(image_name)
-        if path is None or not path.exists():
-            raise HTTPException(status_code=404, detail=f"Image not found: {image_name}")
-        return FileResponse(path)
+        return _gallery_image_response(state, gallery_split, image_name)
 
     @app.get("/health")
     def health() -> dict[str, Any]:
-        return {
-            "status": "ok",
-            "device": state.device.type,
-            "indexes": {
-                split_name: {
-                    "gallery_images": len(index_set.gallery_paths),
-                    "index": str(index_set.index_path),
-                    "mapping": str(index_set.mapping_path),
-                }
-                for split_name, index_set in state.index_sets.items()
-            },
-            "index_errors": state.index_errors,
-        }
+        return _health_payload(state)
 
     return app
 
