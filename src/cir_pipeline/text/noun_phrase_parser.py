@@ -89,7 +89,7 @@ class NounPhraseParser:
     def _stanza_pipeline_kwargs(self) -> dict:
         processors = "tokenize,pos,constituency"
         if str(self.stanza_np_extractor).lower().startswith("dep"):
-            processors = "tokenize,pos,depparse"
+            processors="tokenize,mwt,pos,lemma,depparse"
         kwargs = {
             "lang": "en",
             "processors": processors,
@@ -132,6 +132,46 @@ class NounPhraseParser:
         except Exception:  # pragma: no cover
             return []
 
+    def _build_children_map(self, words: list) -> dict[int, list[int]]:
+        children: dict[int, list[int]] = {}
+        for i, w in enumerate(words, start=1):
+            head = int(getattr(w, "head", 0) or 0)
+            children.setdefault(head, []).append(i)
+        return children
+
+    def _is_clausal_or_verb(self, child) -> bool:
+        deprel = (getattr(child, "deprel", "") or "").lower()
+        upos = (getattr(child, "upos", "") or "").lower()
+        return (
+            upos == "verb"
+            or deprel.startswith("acl")
+            or deprel in {"advcl", "xcomp", "ccomp", "cop"}
+        )
+
+    def _collect_subtree(self, children: dict[int, list[int]], words: list, root_idx: int) -> list[int]:
+        """Collect dependency subtree indices for a given head, skipping clausal/verb children."""
+        stack = [root_idx]
+        collected: list[int] = []
+        while stack:
+            cur = stack.pop()
+            collected.append(cur)
+            for c in children.get(cur, []):
+                child = words[c - 1]
+                deprel = (getattr(child, "deprel", "") or "").lower()
+                if self._is_clausal_or_verb(child):
+                    continue
+                if deprel == "conj" or deprel == "punct":
+                    continue
+                stack.append(c)
+        return sorted(set(collected))
+
+    def _assemble_phrase(self, words: list, indices: list[int]) -> str:
+        if not indices:
+            return ""
+        phrase_tokens = [getattr(words[j - 1], "text", "") for j in sorted(indices)]
+        phrase = " ".join(t for t in phrase_tokens if t).strip()
+        return self._normalize_phrase_text(phrase)
+
     def _normalize_phrase_text(self, phrase: str) -> str:
         """Small normalizations to make phrases match caption substrings.
 
@@ -144,12 +184,14 @@ class NounPhraseParser:
         # remove space before punctuation
         s = re.sub(r"\s+([.,!?;:])", r"\1", s)
         # common contractions: e.g. `ca n't` or `do n't` -> `can't`, `don't`
-        s = re.sub(r"\b([A-Za-z]+)\s+n'?t\b", r"\1n't", s, flags=re.IGNORECASE)
-        s = re.sub(r"\b([A-Za-z]+)\s+'s\b", r"\1's", s, flags=re.IGNORECASE)
-        s = re.sub(r"\b([A-Za-z]+)\s+'re\b", r"\1're", s, flags=re.IGNORECASE)
-        s = re.sub(r"\b([A-Za-z]+)\s+'ve\b", r"\1've", s, flags=re.IGNORECASE)
-        s = re.sub(r"\b([A-Za-z]+)\s+'ll\b", r"\1'll", s, flags=re.IGNORECASE)
-        s = re.sub(r"\b([A-Za-z]+)\s+'m\b", r"\1'm", s, flags=re.IGNORECASE)
+        # use a single lowercase class with IGNORECASE to avoid duplicate
+        # character-class warnings from static analyzers.
+        s = re.sub(r"\b([a-z]+)\s+n'?t\b", r"\1n't", s, flags=re.IGNORECASE)
+        s = re.sub(r"\b([a-z]+)\s+'s\b", r"\1's", s, flags=re.IGNORECASE)
+        s = re.sub(r"\b([a-z]+)\s+'re\b", r"\1're", s, flags=re.IGNORECASE)
+        s = re.sub(r"\b([a-z]+)\s+'ve\b", r"\1've", s, flags=re.IGNORECASE)
+        s = re.sub(r"\b([a-z]+)\s+'ll\b", r"\1'll", s, flags=re.IGNORECASE)
+        s = re.sub(r"\b([a-z]+)\s+'m\b", r"\1'm", s, flags=re.IGNORECASE)
         return s.strip()
 
     def _extract_stanza_dependency(self, text: str) -> list[str]:
@@ -170,48 +212,15 @@ class NounPhraseParser:
                 words = getattr(sentence, "words", []) or []
                 if not words:
                     continue
-                # children map: head_index -> list(child_indices)
-                children: dict[int, list[int]] = {}
-                for i, w in enumerate(words, start=1):
-                    head = int(getattr(w, "head", 0) or 0)
-                    children.setdefault(head, []).append(i)
-
-                def collect_subtree(root_idx: int) -> list[int]:
-                    # iterative DFS collecting allowed descendants
-                    stack = [root_idx]
-                    collected: list[int] = []
-                    while stack:
-                        cur = stack.pop()
-                        collected.append(cur)
-                        for c in children.get(cur, []):
-                            child = words[c - 1]
-                            deprel = (getattr(child, "deprel", "") or "").lower()
-                            upos = (getattr(child, "upos", "") or "").lower()
-                            # exclude clausal attachments and verbs (keep noun-modifiers)
-                            if upos == "verb" or deprel.startswith("acl") or deprel in {
-                                "advcl",
-                                "xcomp",
-                                "ccomp",
-                                "cop",
-                            }:
-                                continue
-                            # avoid merging coordinated heads here (handle conj separately)
-                            if deprel == "conj":
-                                continue
-                            if deprel == "punct":
-                                continue
-                            stack.append(c)
-                    return sorted(set(collected))
+                # build children index map for the sentence
+                children: dict[int, list[int]] = self._build_children_map(words)
 
                 for i, w in enumerate(words, start=1):
                     upos = (getattr(w, "upos", "") or "").upper()
                     if upos not in {"NOUN", "PROPN", "PRON"}:
                         continue
-                    indices = collect_subtree(i)
-                    # assemble phrase text from original word texts in order
-                    phrase_tokens = [getattr(words[j - 1], "text", "") for j in indices]
-                    phrase = " ".join(t for t in phrase_tokens if t).strip()
-                    phrase = self._normalize_phrase_text(phrase)
+                    indices = self._collect_subtree(children, words, i)
+                    phrase = self._assemble_phrase(words, indices)
                     if not phrase:
                         continue
                     # skip trivial stopwords / pronouns alone
@@ -226,6 +235,9 @@ class NounPhraseParser:
                         phrases.append(phrase)
                         if len(phrases) >= self.max_phrases:
                             break
+                # stop early if we've collected enough phrases
+                if len(phrases) >= self.max_phrases:
+                    break
             return phrases
         except Exception:  # pragma: no cover
             return []
@@ -251,7 +263,7 @@ class NounPhraseParser:
         if hasattr(node, "leaf_labels"):
             return " ".join(node.leaf_labels()).strip()
         text = str(node)
-        tokens = re.findall(r"\b[\w'-]+\b", text)
+        tokens = re.findall(r"\b[\w'\-]+\b", text)
         return " ".join(tokens).strip()
 
     def _extract_nltk(self, text: str) -> list[str]:
@@ -279,7 +291,7 @@ class NounPhraseParser:
             return []
 
     def _extract_regex(self, text: str) -> list[str]:
-        tokens = re.findall(r"[A-Za-z][A-Za-z'-]*", text)
+        tokens = re.findall(r"[a-z][a-z'\-]*", text, flags=re.IGNORECASE)
         phrases: list[str] = []
         current: list[str] = []
         for token in tokens:
