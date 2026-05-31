@@ -6,16 +6,34 @@ from typing import Any
 
 
 def _find_span(text: str, phrase: str, start: int = 0) -> tuple[int, int] | None:
+    """Find a character span for `phrase` inside `text`.
+
+    This first tries an exact substring match (case-insensitive). If that
+    fails it falls back to a looser regex-based search that allows
+    punctuation/spacing differences (helps with tokenization artifacts like
+    "ca n't" vs "can't"). Returns (start, end) or None.
+    """
+    import re
+
     text_lower = text.lower()
-    phrase_lower = phrase.lower().strip()
+    phrase_lower = (phrase or "").lower().strip()
     if not phrase_lower:
         return None
+
+    # Fast exact substring match
     idx = text_lower.find(phrase_lower, start)
-    if idx < 0:
-        idx = text_lower.find(phrase_lower)
-    if idx < 0:
+    if idx >= 0:
+        return idx, idx + len(phrase_lower)
+
+    # Looser tokenized match: allow any non-word chars between phrase tokens.
+    tokens = re.findall(r"[\w'-]+", phrase_lower)
+    if not tokens:
         return None
-    return idx, idx + len(phrase_lower)
+    pattern = r"\b" + r"\W*".join(re.escape(tok) for tok in tokens) + r"\b"
+    m = re.search(pattern, text_lower)
+    if not m:
+        return None
+    return m.start(), m.end()
 
 
 def align_noun_phrases(

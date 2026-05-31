@@ -75,7 +75,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a heatmap UI for CIRR Text-CC and contrastive ablations.")
     parser.add_argument("--config", default="configs/cirr_context_cir_cl_cc.yaml")
     parser.add_argument("--split", default="val", choices=["train", "val", "test1"])
-    parser.add_argument("--cl_checkpoint", default=None)
+    parser.add_argument(
+        "--cl_checkpoint",
+        default=MODEL_VARIANTS["cl"]["default_checkpoint"],
+        help="Checkpoint for the CL-only model slot.",
+    )
     parser.add_argument(
         "--cl_cc_checkpoint",
         default=MODEL_VARIANTS["cl_cc"]["default_checkpoint"],
@@ -136,9 +140,10 @@ def _create_state(
     samples_by_pair_id = {str(sample["pair_id"]): sample for sample in samples}
     noun_parser = NounPhraseParser(
         max_phrases=max(1, cfg.loss.max_noun_phrases),
-        backend=cfg.data.noun_phrase_backend if cfg.data.noun_phrase_backend != "none" else "regex",
-        stanza_resources_dir=cfg.data.stanza_resources_dir,
-        stanza_download_method=cfg.data.stanza_download_method,
+      backend=cfg.data.noun_phrase_backend if cfg.data.noun_phrase_backend != "none" else "regex",
+      stanza_resources_dir=cfg.data.stanza_resources_dir,
+      stanza_download_method=cfg.data.stanza_download_method,
+      stanza_np_extractor=getattr(cfg.data, "noun_phrase_extractor", "constituency"),
     )
     model_slots = {
         key: _load_model_slot(key, cfg, _resolve_project_path(checkpoints.get(key)), device)
