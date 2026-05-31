@@ -77,6 +77,18 @@ def _clean_extended_caption(value: Any) -> str | None:
 
 def _load_split_samples(cfg: AppConfig, split: str) -> list[dict[str, Any]]:
     metadata_root = Path(cfg.data.metadata_root)
+    image_splits, caption_rows = _load_split_metadata(metadata_root, split)
+    ext_by_pairid = _load_extended_captions(metadata_root, split, cfg.data.use_extended_captions)
+
+    samples: list[dict[str, Any]] = []
+    for row in caption_rows:
+        sample = _sample_from_caption_row(row, image_splits, ext_by_pairid, cfg, split)
+        if sample is not None:
+            samples.append(sample)
+    return samples
+
+
+def _load_split_metadata(metadata_root: Path, split: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     image_splits_path = metadata_root / "image_splits" / f"split.rc2.{split}.json"
     captions_path = metadata_root / "captions" / f"cap.rc2.{split}.json"
     image_splits = read_json(image_splits_path)
@@ -85,39 +97,56 @@ def _load_split_samples(cfg: AppConfig, split: str) -> list[dict[str, Any]]:
         raise ValueError(f"Expected image split manifest to be a dict: {image_splits_path}")
     if not isinstance(caption_rows, list):
         raise ValueError(f"Expected captions file to be a list: {captions_path}")
+    return image_splits, caption_rows
 
-    ext_by_pairid: dict[str, dict[str, Any]] = {}
-    if cfg.data.use_extended_captions:
-        ext_path = metadata_root / "captions_ext" / f"cap.ext.rc2.{split}.json"
-        if ext_path.exists():
-            ext_rows = read_json(ext_path)
-            ext_by_pairid = {str(row.get("pairid")): row for row in ext_rows}
 
-    samples: list[dict[str, Any]] = []
-    for row in caption_rows:
-        caption = _merged_caption(row, ext_by_pairid, cfg.data.use_extended_captions)
-        if not caption and split == "train" and cfg.data.skip_empty_captions:
-            continue
-        reference = str(row.get("reference"))
-        target = row.get("target_hard")
-        if reference not in image_splits:
-            continue
-        if target is not None and str(target) not in image_splits:
-            continue
-        img_set = row.get("img_set") or {}
-        members = img_set.get("members", []) if isinstance(img_set, dict) else []
-        samples.append(
-            {
-                "pair_id": row.get("pairid"),
-                "reference_name": reference,
-                "target_name": str(target) if target is not None else None,
-                "caption": caption,
-                "target_soft": row.get("target_soft") or {},
-                "img_set_id": img_set.get("id") if isinstance(img_set, dict) else None,
-                "img_set": list(members),
-            }
-        )
-    return samples
+def _load_extended_captions(
+    metadata_root: Path,
+    split: str,
+    use_extended: bool,
+) -> dict[str, dict[str, Any]]:
+    if not use_extended:
+        return {}
+    ext_path = metadata_root / "captions_ext" / f"cap.ext.rc2.{split}.json"
+    if not ext_path.exists():
+        return {}
+    ext_rows = read_json(ext_path)
+    return {str(row.get("pairid")): row for row in ext_rows}
+
+
+def _sample_from_caption_row(
+    row: dict[str, Any],
+    image_splits: dict[str, Any],
+    ext_by_pairid: dict[str, dict[str, Any]],
+    cfg: AppConfig,
+    split: str,
+) -> dict[str, Any] | None:
+    caption = _merged_caption(row, ext_by_pairid, cfg.data.use_extended_captions)
+    if not caption and split == "train" and cfg.data.skip_empty_captions:
+        return None
+
+    reference = str(row.get("reference"))
+    target = row.get("target_hard")
+    if not _has_valid_images(reference, target, image_splits):
+        return None
+
+    img_set = row.get("img_set") or {}
+    members = img_set.get("members", []) if isinstance(img_set, dict) else []
+    return {
+        "pair_id": row.get("pairid"),
+        "reference_name": reference,
+        "target_name": str(target) if target is not None else None,
+        "caption": caption,
+        "target_soft": row.get("target_soft") or {},
+        "img_set_id": img_set.get("id") if isinstance(img_set, dict) else None,
+        "img_set": list(members),
+    }
+
+
+def _has_valid_images(reference: str, target: Any, image_splits: dict[str, Any]) -> bool:
+    if reference not in image_splits:
+        return False
+    return target is None or str(target) in image_splits
 
 
 def _merged_caption(row: dict[str, Any], ext_by_pairid: dict[str, dict[str, Any]], use_extended: bool) -> str:

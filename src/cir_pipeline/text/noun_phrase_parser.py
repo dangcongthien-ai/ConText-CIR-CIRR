@@ -78,7 +78,7 @@ class NounPhraseParser:
             pipeline_kwargs = self._stanza_pipeline_kwargs()
             self._stanza_pipeline = stanza.Pipeline(**pipeline_kwargs)
             return self._stanza_pipeline
-        except Exception as exc:  # pragma: no cover - depends on local models
+        except Exception as exc:
             self._stanza_failed = True
             warnings.warn(
                 "Stanza noun phrase parser is unavailable; falling back to NLTK/regex. "
@@ -89,7 +89,7 @@ class NounPhraseParser:
     def _stanza_pipeline_kwargs(self) -> dict:
         processors = "tokenize,pos,constituency"
         if str(self.stanza_np_extractor).lower().startswith("dep"):
-            processors="tokenize,mwt,pos,lemma,depparse"
+            processors = "tokenize,mwt,pos,lemma,depparse"
         kwargs = {
             "lang": "en",
             "processors": processors,
@@ -107,7 +107,7 @@ class NounPhraseParser:
             return None
         try:
             from stanza.pipeline.core import DownloadMethod
-        except Exception:  # pragma: no cover - depends on local stanza version
+        except Exception:
             return method
         enum_name = {
             "reuse_resources": "REUSE_RESOURCES",
@@ -116,7 +116,6 @@ class NounPhraseParser:
         return getattr(DownloadMethod, enum_name)
 
     def _extract_stanza(self, text: str) -> list[str]:
-        # Dispatch to constituency or dependency extractor depending on config.
         if str(self.stanza_np_extractor).lower().startswith("dep"):
             return self._extract_stanza_dependency(text)
 
@@ -129,7 +128,7 @@ class NounPhraseParser:
             for sentence in doc.sentences:
                 self._append_sentence_noun_phrases(sentence, phrases)
             return phrases
-        except Exception:  # pragma: no cover
+        except Exception:
             return []
 
     def _build_children_map(self, words: list) -> dict[int, list[int]]:
@@ -181,11 +180,7 @@ class NounPhraseParser:
         s = (phrase or "").strip()
         if not s:
             return ""
-        # remove space before punctuation
         s = re.sub(r"\s+([.,!?;:])", r"\1", s)
-        # common contractions: e.g. `ca n't` or `do n't` -> `can't`, `don't`
-        # use a single lowercase class with IGNORECASE to avoid duplicate
-        # character-class warnings from static analyzers.
         s = re.sub(r"\b([a-z]+)\s+n'?t\b", r"\1n't", s, flags=re.IGNORECASE)
         s = re.sub(r"\b([a-z]+)\s+'s\b", r"\1's", s, flags=re.IGNORECASE)
         s = re.sub(r"\b([a-z]+)\s+'re\b", r"\1're", s, flags=re.IGNORECASE)
@@ -209,38 +204,50 @@ class NounPhraseParser:
             doc = nlp(text)
             phrases: list[str] = []
             for sentence in doc.sentences:
-                words = getattr(sentence, "words", []) or []
-                if not words:
-                    continue
-                # build children index map for the sentence
-                children: dict[int, list[int]] = self._build_children_map(words)
-
-                for i, w in enumerate(words, start=1):
-                    upos = (getattr(w, "upos", "") or "").upper()
-                    if upos not in {"NOUN", "PROPN", "PRON"}:
-                        continue
-                    indices = self._collect_subtree(children, words, i)
-                    phrase = self._assemble_phrase(words, indices)
-                    if not phrase:
-                        continue
-                    # skip trivial stopwords / pronouns alone
-                    low = phrase.lower()
-                    if low in FALLBACK_STOPWORDS:
-                        continue
-                    if low in {"it", "them", "they", "this", "that", "these", "those"} and len(
-                        phrase.split()
-                    ) == 1:
-                        continue
-                    if phrase not in phrases:
-                        phrases.append(phrase)
-                        if len(phrases) >= self.max_phrases:
-                            break
-                # stop early if we've collected enough phrases
+                self._append_dependency_sentence_phrases(sentence, phrases)
                 if len(phrases) >= self.max_phrases:
                     break
             return phrases
-        except Exception:  # pragma: no cover
+        except Exception:
             return []
+
+    def _append_dependency_sentence_phrases(self, sentence, phrases: list[str]) -> None:
+        words = getattr(sentence, "words", []) or []
+        if not words:
+            return
+
+        children = self._build_children_map(words)
+        for index, word in enumerate(words, start=1):
+            if len(phrases) >= self.max_phrases:
+                break
+            phrase = self._dependency_phrase_for_word(words, children, index, word)
+            if phrase and phrase not in phrases:
+                phrases.append(phrase)
+
+    def _dependency_phrase_for_word(
+        self,
+        words: list,
+        children: dict[int, list[int]],
+        word_index: int,
+        word,
+    ) -> str:
+        upos = (getattr(word, "upos", "") or "").upper()
+        if upos not in {"NOUN", "PROPN", "PRON"}:
+            return ""
+        indices = self._collect_subtree(children, words, word_index)
+        phrase = self._assemble_phrase(words, indices)
+        if self._is_trivial_dependency_phrase(phrase):
+            return ""
+        return phrase
+
+    def _is_trivial_dependency_phrase(self, phrase: str) -> bool:
+        if not phrase:
+            return True
+        lowered = phrase.lower()
+        if lowered in FALLBACK_STOPWORDS:
+            return True
+        pronouns = {"it", "them", "they", "this", "that", "these", "those"}
+        return lowered in pronouns and len(phrase.split()) == 1
 
     def _append_sentence_noun_phrases(self, sentence, phrases: list[str]) -> None:
         tree = getattr(sentence, "constituency", None)
@@ -326,8 +333,6 @@ def prepare_stanza_resources(resources_dir: str | None = None) -> bool:
     try:
         import stanza
 
-        # Download both constituency and dependency models so either extractor
-        # can be used without an extra network step.
         kwargs = {
             "lang": "en",
             "processors": "tokenize,pos,constituency,depparse",
@@ -337,6 +342,6 @@ def prepare_stanza_resources(resources_dir: str | None = None) -> bool:
             kwargs["model_dir"] = str(Path(resources_dir))
         stanza.download(**kwargs)
         return True
-    except Exception as exc:  # pragma: no cover - depends on network/local cache
+    except Exception as exc:
         warnings.warn(f"Could not prepare Stanza resources; parser will fall back if needed. Original error: {exc}")
         return False
