@@ -30,6 +30,7 @@ class DataConfig:
     stanza_resources_dir: Optional[str] = None
     stanza_download_method: str = "reuse_resources"
     num_workers: int = 8
+    noun_phrase_extractor: str = "constituency"
 
 
 @dataclass
@@ -170,6 +171,10 @@ def _validate_data_config(cfg: DataConfig) -> None:
     _require(
         cfg.noun_phrase_backend in {"auto", "stanza", "nltk", "regex", "none"},
         "data.noun_phrase_backend must be one of: auto, stanza, nltk, regex, none.",
+    )
+    _require(
+        cfg.noun_phrase_extractor in {"constituency", "dependency"},
+        "data.noun_phrase_extractor must be one of: constituency, dependency.",
     )
     _require(
         cfg.stanza_download_method in {"none", "reuse_resources", "download_resources"},

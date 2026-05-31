@@ -30,6 +30,7 @@ class CIRRDataModule(pl.LightningDataModule if pl else object):
                 backend=cfg.data.noun_phrase_backend,
                 stanza_resources_dir=cfg.data.stanza_resources_dir,
                 stanza_download_method=cfg.data.stanza_download_method,
+                stanza_np_extractor=getattr(cfg.data, "noun_phrase_extractor", "constituency"),
             )
         )
         self.train_dataset: CIRRDataset | None = None

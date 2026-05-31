@@ -44,6 +44,7 @@ class NounPhraseParser:
     backend: str = "auto"
     stanza_resources_dir: str | None = None
     stanza_download_method: str = "reuse_resources"
+    stanza_np_extractor: str = "constituency"
 
     def __post_init__(self) -> None:
         self._stanza_pipeline = None
@@ -86,9 +87,12 @@ class NounPhraseParser:
             return None
 
     def _stanza_pipeline_kwargs(self) -> dict:
+        processors = "tokenize,pos,constituency"
+        if str(self.stanza_np_extractor).lower().startswith("dep"):
+            processors = "tokenize,pos,depparse"
         kwargs = {
             "lang": "en",
-            "processors": "tokenize,pos,constituency",
+            "processors": processors,
             "use_gpu": False,
             "verbose": False,
         }
@@ -112,6 +116,10 @@ class NounPhraseParser:
         return getattr(DownloadMethod, enum_name)
 
     def _extract_stanza(self, text: str) -> list[str]:
+        # Dispatch to constituency or dependency extractor depending on config.
+        if str(self.stanza_np_extractor).lower().startswith("dep"):
+            return self._extract_stanza_dependency(text)
+
         nlp = self._ensure_stanza()
         if nlp is None:
             return []
@@ -120,6 +128,104 @@ class NounPhraseParser:
             phrases: list[str] = []
             for sentence in doc.sentences:
                 self._append_sentence_noun_phrases(sentence, phrases)
+            return phrases
+        except Exception:  # pragma: no cover
+            return []
+
+    def _normalize_phrase_text(self, phrase: str) -> str:
+        """Small normalizations to make phrases match caption substrings.
+
+        Collapses common tokenization artifacts (e.g. "ca n't" -> "can't") and
+        removes stray spaces before punctuation.
+        """
+        s = (phrase or "").strip()
+        if not s:
+            return ""
+        # remove space before punctuation
+        s = re.sub(r"\s+([.,!?;:])", r"\1", s)
+        # common contractions: e.g. `ca n't` or `do n't` -> `can't`, `don't`
+        s = re.sub(r"\b([A-Za-z]+)\s+n'?t\b", r"\1n't", s, flags=re.IGNORECASE)
+        s = re.sub(r"\b([A-Za-z]+)\s+'s\b", r"\1's", s, flags=re.IGNORECASE)
+        s = re.sub(r"\b([A-Za-z]+)\s+'re\b", r"\1're", s, flags=re.IGNORECASE)
+        s = re.sub(r"\b([A-Za-z]+)\s+'ve\b", r"\1've", s, flags=re.IGNORECASE)
+        s = re.sub(r"\b([A-Za-z]+)\s+'ll\b", r"\1'll", s, flags=re.IGNORECASE)
+        s = re.sub(r"\b([A-Za-z]+)\s+'m\b", r"\1'm", s, flags=re.IGNORECASE)
+        return s.strip()
+
+    def _extract_stanza_dependency(self, text: str) -> list[str]:
+        """Extract noun chunks using Stanza dependency parses.
+
+        Strategy: for each noun/proper-noun/pronoun token, collect a small
+        subtree of dependents that are not clausal (exclude verbal/clausal
+        relations and punctuation). This keeps phrases compact (no verbs)
+        and focuses CC on object-like spans.
+        """
+        nlp = self._ensure_stanza()
+        if nlp is None:
+            return []
+        try:
+            doc = nlp(text)
+            phrases: list[str] = []
+            for sentence in doc.sentences:
+                words = getattr(sentence, "words", []) or []
+                if not words:
+                    continue
+                # children map: head_index -> list(child_indices)
+                children: dict[int, list[int]] = {}
+                for i, w in enumerate(words, start=1):
+                    head = int(getattr(w, "head", 0) or 0)
+                    children.setdefault(head, []).append(i)
+
+                def collect_subtree(root_idx: int) -> list[int]:
+                    # iterative DFS collecting allowed descendants
+                    stack = [root_idx]
+                    collected: list[int] = []
+                    while stack:
+                        cur = stack.pop()
+                        collected.append(cur)
+                        for c in children.get(cur, []):
+                            child = words[c - 1]
+                            deprel = (getattr(child, "deprel", "") or "").lower()
+                            upos = (getattr(child, "upos", "") or "").lower()
+                            # exclude clausal attachments and verbs (keep noun-modifiers)
+                            if upos == "verb" or deprel.startswith("acl") or deprel in {
+                                "advcl",
+                                "xcomp",
+                                "ccomp",
+                                "cop",
+                            }:
+                                continue
+                            # avoid merging coordinated heads here (handle conj separately)
+                            if deprel == "conj":
+                                continue
+                            if deprel == "punct":
+                                continue
+                            stack.append(c)
+                    return sorted(set(collected))
+
+                for i, w in enumerate(words, start=1):
+                    upos = (getattr(w, "upos", "") or "").upper()
+                    if upos not in {"NOUN", "PROPN", "PRON"}:
+                        continue
+                    indices = collect_subtree(i)
+                    # assemble phrase text from original word texts in order
+                    phrase_tokens = [getattr(words[j - 1], "text", "") for j in indices]
+                    phrase = " ".join(t for t in phrase_tokens if t).strip()
+                    phrase = self._normalize_phrase_text(phrase)
+                    if not phrase:
+                        continue
+                    # skip trivial stopwords / pronouns alone
+                    low = phrase.lower()
+                    if low in FALLBACK_STOPWORDS:
+                        continue
+                    if low in {"it", "them", "they", "this", "that", "these", "those"} and len(
+                        phrase.split()
+                    ) == 1:
+                        continue
+                    if phrase not in phrases:
+                        phrases.append(phrase)
+                        if len(phrases) >= self.max_phrases:
+                            break
             return phrases
         except Exception:  # pragma: no cover
             return []
@@ -205,13 +311,14 @@ class NounPhraseParser:
 
 def prepare_stanza_resources(resources_dir: str | None = None) -> bool:
     """Download Stanza English parser resources once before DataLoader workers start."""
-
     try:
         import stanza
 
+        # Download both constituency and dependency models so either extractor
+        # can be used without an extra network step.
         kwargs = {
             "lang": "en",
-            "processors": "tokenize,pos,constituency",
+            "processors": "tokenize,pos,constituency,depparse",
             "verbose": False,
         }
         if resources_dir:

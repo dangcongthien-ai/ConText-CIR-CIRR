@@ -140,9 +140,10 @@ def _create_state(
     samples_by_pair_id = {str(sample["pair_id"]): sample for sample in samples}
     noun_parser = NounPhraseParser(
         max_phrases=max(1, cfg.loss.max_noun_phrases),
-        backend=cfg.data.noun_phrase_backend if cfg.data.noun_phrase_backend != "none" else "regex",
-        stanza_resources_dir=cfg.data.stanza_resources_dir,
-        stanza_download_method=cfg.data.stanza_download_method,
+      backend=cfg.data.noun_phrase_backend if cfg.data.noun_phrase_backend != "none" else "regex",
+      stanza_resources_dir=cfg.data.stanza_resources_dir,
+      stanza_download_method=cfg.data.stanza_download_method,
+      stanza_np_extractor=getattr(cfg.data, "noun_phrase_extractor", "constituency"),
     )
     model_slots = {
         key: _load_model_slot(key, cfg, _resolve_project_path(checkpoints.get(key)), device)

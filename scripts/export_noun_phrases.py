@@ -140,6 +140,7 @@ def _build_parser(cfg: AppConfig, backend: str, max_phrases: int) -> NounPhraseP
         backend=backend,
         stanza_resources_dir=cfg.data.stanza_resources_dir,
         stanza_download_method=cfg.data.stanza_download_method,
+        stanza_np_extractor=getattr(cfg.data, "noun_phrase_extractor", "constituency"),
     )
 
 
