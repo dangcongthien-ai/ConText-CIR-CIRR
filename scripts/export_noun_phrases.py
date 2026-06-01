@@ -28,6 +28,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--backend", default="both", choices=["stanza", "regex", "both"])
     parser.add_argument("--output_dir", default="outputs/noun_phrases")
     parser.add_argument("--max_phrases", type=int, default=None)
+    parser.add_argument(
+        "--noun_phrase_extractor",
+        default=None,
+        choices=["constituency", "dependency", "constituency_minimal_np"],
+        help="Optional override for the Stanza phrase extractor mode.",
+    )
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument(
         "--allow_fallback",
@@ -163,13 +169,18 @@ def _merged_caption(row: dict[str, Any], ext_by_pairid: dict[str, dict[str, Any]
     return " ".join(pieces) if pieces else caption
 
 
-def _build_parser(cfg: AppConfig, backend: str, max_phrases: int) -> NounPhraseParser:
+def _build_parser(
+    cfg: AppConfig,
+    backend: str,
+    max_phrases: int,
+    noun_phrase_extractor: str | None = None,
+) -> NounPhraseParser:
     return NounPhraseParser(
         max_phrases=max_phrases,
         backend=backend,
         stanza_resources_dir=cfg.data.stanza_resources_dir,
         stanza_download_method=cfg.data.stanza_download_method,
-        stanza_np_extractor=getattr(cfg.data, "noun_phrase_extractor", "constituency"),
+        stanza_np_extractor=noun_phrase_extractor or getattr(cfg.data, "noun_phrase_extractor", "constituency"),
     )
 
 
@@ -183,15 +194,17 @@ def _preflight_stanza(parser: NounPhraseParser, allow_fallback: bool) -> None:
         )
 
 
-def _extract(parser: NounPhraseParser, backend: str, caption: str, allow_fallback: bool) -> list[str]:
-    if backend == "stanza" and not allow_fallback:
-        return parser._extract_stanza(caption)[: parser.max_phrases]
-    return parser.extract(caption)[: parser.max_phrases]
+def _analyze(parser: NounPhraseParser, backend: str, caption: str, allow_fallback: bool):
+    if backend == "stanza":
+        return parser.analyze(caption, force_backend="stanza", allow_fallback=allow_fallback)
+    if backend == "regex":
+        return parser.analyze(caption, force_backend="regex", allow_fallback=True)
+    return parser.analyze(caption, allow_fallback=allow_fallback)
 
 
 def _sample_row(
     sample: dict[str, Any],
-    phrases: list[str],
+    analysis,
     backend: str,
 ) -> dict[str, Any]:
     return {
@@ -199,11 +212,14 @@ def _sample_row(
         "reference_name": sample.get("reference_name"),
         "target_name": sample.get("target_name"),
         "caption": sample.get("caption"),
-        "noun_phrases": phrases,
-        "num_noun_phrases": len(phrases),
+        "noun_phrases": analysis.noun_phrases,
+        "num_noun_phrases": len(analysis.noun_phrases),
         "img_set_id": sample.get("img_set_id"),
         "img_set": sample.get("img_set", []),
         "backend": backend,
+        "phrase_extractor": analysis.phrase_extractor,
+        "edit_actions": analysis.edit_actions,
+        "parser_warnings": analysis.parser_warnings,
     }
 
 
@@ -233,8 +249,9 @@ def _export_backend_split(
     limit: int | None,
     allow_fallback: bool,
     per_backend_dirs: bool,
+    noun_phrase_extractor: str | None,
 ) -> Path:
-    parser = _build_parser(cfg, backend, max_phrases)
+    parser = _build_parser(cfg, backend, max_phrases, noun_phrase_extractor=noun_phrase_extractor)
     if backend == "stanza":
         _preflight_stanza(parser, allow_fallback)
 
@@ -244,8 +261,8 @@ def _export_backend_split(
     progress = tqdm(samples, desc=f"{backend} {split}", unit="caption")
     for sample in progress:
         caption = str(sample.get("caption") or "")
-        phrases = _extract(parser, backend, caption, allow_fallback)
-        rows.append(_sample_row(sample, phrases, backend))
+        analysis = _analyze(parser, backend, caption, allow_fallback)
+        rows.append(_sample_row(sample, analysis, backend))
 
     payload = {
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -332,6 +349,7 @@ def main() -> None:
                 limit=args.limit,
                 allow_fallback=args.allow_fallback,
                 per_backend_dirs=args.per_backend_dirs,
+                noun_phrase_extractor=args.noun_phrase_extractor,
             )
             with output_path.open("r", encoding="utf-8") as handle:
                 backend_payloads[backend] = json.load(handle)
