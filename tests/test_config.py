@@ -47,6 +47,48 @@ def test_only_two_canonical_training_configs_remain():
             "clean_only": False,
         },
         "configs/cirr_context_cir_cl_cc.yaml": {
+            "experiment_name": "cirr_vitb32_cl_cc",
+            "lambda_cont": 1.0,
+            "lambda_cc": 0.2,
+            "backend": "stanza",
+            "extractor": "dependency",
+            "clean_only": False,
+        },
+        "configs/cirr_context_cir_cl_cc_min_np.yaml": {
+            "experiment_name": "cirr_vitb32_cl_cc_min_np",
+            "lambda_cont": 1.0,
+            "lambda_cc": 0.2,
+            "backend": "stanza",
+            "extractor": "constituency_minimal_np",
+            "clean_only": False,
+        },
+        "configs/cirr_context_cir_cl_cc_min_np_paper.yaml": {
+            "experiment_name": "cirr_vitb32_cl_cc_min_np_paper",
+            "lambda_cont": 1.0,
+            "lambda_cc": 0.08,
+            "backend": "stanza",
+            "extractor": "constituency_minimal_np",
+            "clean_only": False,
+        },
+        "configs/cirr_context_cir_cl_cc_min_np_clean.yaml": {
+            "experiment_name": "cirr_vitb32_cl_cc_min_np_clean",
+            "lambda_cont": 1.0,
+            "lambda_cc": 0.08,
+            "backend": "stanza",
+            "extractor": "constituency_minimal_np",
+            "clean_only": True,
+        },
+    }
+    for path, expected in variants.items():
+        "configs/cirr_context_cir_cl.yaml": {
+            "experiment_name": "cirr_vitb32_cl",
+            "lambda_cont": 1.0,
+            "lambda_cc": 0.0,
+            "backend": "none",
+            "extractor": "constituency",
+            "clean_only": False,
+        },
+        "configs/cirr_context_cir_cl_cc.yaml": {
             "experiment_name": "cirr_vitb32_cl_cc_best",
             "lambda_cont": 1.0,
             "lambda_cc": 0.08,
@@ -65,7 +107,17 @@ def test_only_two_canonical_training_configs_remain():
         assert data["data"]["noun_phrase_extractor"] == expected["extractor"]
         assert data["loss"]["text_cc_clean_only"] is expected["clean_only"]
         assert math.isclose(data["loss"]["text_cc_clean_min_confidence"], 0.7)
+        assert data["logger"]["experiment_name"] == expected["experiment_name"]
+        assert math.isclose(data["loss"]["lambda_cont"], expected["lambda_cont"])
+        assert math.isclose(data["loss"]["lambda_cc"], expected["lambda_cc"])
+        assert data["data"]["noun_phrase_backend"] == expected["backend"]
+        assert data["data"]["noun_phrase_extractor"] == expected["extractor"]
+        assert data["loss"]["text_cc_clean_only"] is expected["clean_only"]
+        assert math.isclose(data["loss"]["text_cc_clean_min_confidence"], 0.7)
         assert data["train"]["save_top_k"] == 1
+        assert data["train"]["log_cc_grad_norm"] is False
+        assert data["train"]["cc_grad_norm_interval"] == 0
+        assert data["faiss"]["output_dir"].endswith(expected["experiment_name"])
         assert data["train"]["log_cc_grad_norm"] is False
         assert data["train"]["cc_grad_norm_interval"] == 0
         assert data["faiss"]["output_dir"].endswith(expected["experiment_name"])
