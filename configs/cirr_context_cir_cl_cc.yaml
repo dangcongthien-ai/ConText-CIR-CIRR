@@ -13,7 +13,7 @@ data:
   use_extended_captions: false
   skip_empty_captions: true
   noun_phrase_backend: "stanza"
-  noun_phrase_extractor: "dependency"
+  noun_phrase_extractor: "constituency_minimal_np"
   stanza_resources_dir: ".stanza_resources"
   stanza_download_method: "none"
   num_workers: 8
@@ -35,11 +35,13 @@ model:
 loss:
   temperature: 0.07
   lambda_cont: 1.0
-  lambda_cc: 0.2
+  lambda_cc: 0.08
   epsilon_cc: 0.0
   max_noun_phrases: 5
   use_query_image_negative: true
   query_negative_weight: 0.1
+  text_cc_clean_only: true
+  text_cc_clean_min_confidence: 0.7
 
 train:
   batch_size: 64
@@ -61,18 +63,20 @@ train:
   save_top_k: 1
   monitor: "val/recall@10"
   monitor_mode: "max"
+  log_cc_grad_norm: false
+  cc_grad_norm_interval: 0
 
 logger:
   name: "comet"
   offline: false
   project_name: "ConText-CIR-CIRR"
   workspace: null
-  experiment_name: "cirr_vitb32_cl_cc"
+  experiment_name: "cirr_vitb32_cl_cc_best"
   log_artifacts: true
 
 faiss:
   index_type: "flat_ip"
   top_k: 50
-  output_dir: "outputs/faiss/cirr_vitb32_cl_cc"
+  output_dir: "outputs/faiss/cirr_vitb32_cl_cc_best"
   hnsw_m: 32
   hnsw_ef_search: 64

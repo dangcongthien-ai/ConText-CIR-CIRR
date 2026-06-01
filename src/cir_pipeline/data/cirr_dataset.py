@@ -203,11 +203,12 @@ class CIRRDataset(Dataset):
             return sample
 
         caption = sample["caption"]
-        noun_phrases = (
-            self.noun_phrase_parser.extract(caption)
+        parse_result = (
+            self.noun_phrase_parser.analyze(caption)
             if self.noun_phrase_parser is not None and caption
-            else []
+            else None
         )
+        noun_phrases = parse_result.noun_phrases if parse_result is not None else []
         sample.update(
             {
                 "reference_image": self._load_image(sample["reference_name"]),
@@ -217,6 +218,12 @@ class CIRRDataset(Dataset):
                 if sample["target_name"]
                 else None,
                 "noun_phrases": noun_phrases,
+                "phrase_records": [record.to_dict() for record in parse_result.phrase_records]
+                if parse_result is not None
+                else [],
+                "parser_warnings": list(parse_result.parser_warnings) if parse_result is not None else [],
+                "phrase_extractor": parse_result.phrase_extractor if parse_result is not None else None,
+                "edit_actions": list(parse_result.edit_actions) if parse_result is not None else [],
                 "np_spans": None,
                 "split": self.split,
             }

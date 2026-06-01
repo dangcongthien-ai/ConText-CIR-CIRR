@@ -18,6 +18,7 @@ from cir_pipeline.config import AppConfig, config_to_dict
 from cir_pipeline.engine.evaluator import evaluate_retrieval
 from cir_pipeline.models.context_cir import ConTextCIR
 from cir_pipeline.models.losses import retrieval_contrastive_loss, text_concept_consistency_loss
+from cir_pipeline.text.noun_phrase_parser import select_clean_phrase_texts
 from cir_pipeline.text.token_alignment import align_noun_phrases, align_single_phrase
 
 
@@ -27,6 +28,22 @@ class TextCCInputs:
     iso_token_indices: list[list[int]]
     iso_texts: list[str]
     sample_indices: list[int]
+
+
+def _loss_grad_norm(loss: torch.Tensor, parameters: list[torch.nn.Parameter]) -> torch.Tensor:
+    if not torch.is_tensor(loss) or not loss.requires_grad:
+        ref = parameters[0] if parameters else None
+        return torch.zeros((), device=ref.device if ref is not None else None)
+    grads = torch.autograd.grad(loss, parameters, retain_graph=True, allow_unused=True)
+    squared_norm = None
+    for grad in grads:
+        if grad is None:
+            continue
+        grad_sum = grad.detach().pow(2).sum()
+        squared_norm = grad_sum if squared_norm is None else squared_norm + grad_sum
+    if squared_norm is None:
+        return loss.new_zeros(())
+    return squared_norm.sqrt()
 
 
 class CIRLightningModule(pl.LightningModule if pl else torch.nn.Module):
@@ -87,7 +104,8 @@ class CIRLightningModule(pl.LightningModule if pl else torch.nn.Module):
             return query_out["embeddings"].new_zeros(()), 0
         captions = [str(text or "") for text in batch["caption"]]
         noun_phrases = batch.get("noun_phrases") or [[] for _ in captions]
-        text_cc_inputs = self._build_text_cc_inputs(captions, noun_phrases)
+        phrase_records = batch.get("phrase_records") or [[] for _ in captions]
+        text_cc_inputs = self._build_text_cc_inputs(captions, noun_phrases, phrase_records)
         if not text_cc_inputs.iso_texts:
             return query_out["embeddings"].new_zeros(()), 0
 
@@ -109,21 +127,33 @@ class CIRLightningModule(pl.LightningModule if pl else torch.nn.Module):
         self,
         captions: list[str],
         noun_phrases: list[list[str]],
+        phrase_records: list[list[dict[str, Any]]] | None = None,
     ) -> TextCCInputs:
         full_token_indices: list[list[int]] = []
         iso_token_indices: list[list[int]] = []
         iso_texts: list[str] = []
         sample_indices: list[int] = []
-        for sample_idx, (caption, phrases) in enumerate(zip(captions, noun_phrases)):
-            for phrase, full_idx, iso_idx in self._iter_valid_phrase_alignments(caption, phrases):
+        phrase_records = phrase_records or [[] for _ in captions]
+        for sample_idx, (caption, phrases, records) in enumerate(zip(captions, noun_phrases, phrase_records)):
+            for phrase, full_idx, iso_idx in self._iter_valid_phrase_alignments(caption, phrases, records):
                 full_token_indices.append(full_idx)
                 iso_token_indices.append(iso_idx)
                 iso_texts.append(phrase)
                 sample_indices.append(sample_idx)
         return TextCCInputs(full_token_indices, iso_token_indices, iso_texts, sample_indices)
 
-    def _iter_valid_phrase_alignments(self, caption: str, phrases: list[str]):
-        clipped_phrases = list(phrases or [])[: self.cfg.loss.max_noun_phrases]
+    def _iter_valid_phrase_alignments(
+        self,
+        caption: str,
+        phrases: list[str],
+        phrase_records: list[dict[str, Any]] | None = None,
+    ):
+        clipped_phrases = select_clean_phrase_texts(
+            phrases,
+            phrase_records,
+            clean_only=bool(getattr(self.cfg.loss, "text_cc_clean_only", False)),
+            min_confidence=float(getattr(self.cfg.loss, "text_cc_clean_min_confidence", 0.7)),
+        )[: self.cfg.loss.max_noun_phrases]
         aligned = align_noun_phrases(caption, clipped_phrases, self.model.tokenizer)
         for phrase, full_idx in zip(clipped_phrases, aligned):
             if not full_idx:
@@ -145,6 +175,7 @@ class CIRLightningModule(pl.LightningModule if pl else torch.nn.Module):
         )
         self.log("train/loss_cont", losses["loss_cont"], on_step=True, on_epoch=True, batch_size=batch_size)
         self.log("train/loss_cc", losses["loss_cc"], on_step=True, on_epoch=True, batch_size=batch_size)
+        self.log("train/loss_cc_raw", losses["loss_cc"], on_step=True, on_epoch=True, batch_size=batch_size)
         self.log(
             "train/loss_cont_weighted",
             losses["loss_cont"] * self.cfg.loss.lambda_cont,
@@ -166,6 +197,7 @@ class CIRLightningModule(pl.LightningModule if pl else torch.nn.Module):
             on_epoch=True,
             batch_size=batch_size,
         )
+        self._maybe_log_cc_grad_norms(losses["loss_cont"], losses["loss_cc"], batch_size)
         lr = self.trainer.optimizers[0].param_groups[0]["lr"] if self.trainer.optimizers else 0.0
         self.log("lr", lr, on_step=True, on_epoch=False, batch_size=batch_size)
         return losses["loss_total"]
@@ -197,6 +229,32 @@ class CIRLightningModule(pl.LightningModule if pl else torch.nn.Module):
             return
         norm = torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=float("inf"))
         self.log("train/grad_norm", norm, on_step=True, on_epoch=False, batch_size=1)
+
+    def _maybe_log_cc_grad_norms(self, loss_cont: torch.Tensor, loss_cc: torch.Tensor, batch_size: int) -> None:
+        interval = int(getattr(self.cfg.train, "cc_grad_norm_interval", 0) or 0)
+        if not bool(getattr(self.cfg.train, "log_cc_grad_norm", False)) or interval <= 0:
+            return
+        current_step = int(getattr(self, "global_step", 0))
+        if current_step % interval != 0:
+            return
+        parameters = [parameter for parameter in self.parameters() if parameter.requires_grad]
+        if not parameters:
+            return
+        weighted_cc = loss_cc * float(self.cfg.loss.lambda_cc)
+        self.log(
+            "train/grad_norm_contrastive",
+            _loss_grad_norm(loss_cont, parameters),
+            on_step=True,
+            on_epoch=False,
+            batch_size=batch_size,
+        )
+        self.log(
+            "train/grad_norm_cc",
+            _loss_grad_norm(weighted_cc, parameters),
+            on_step=True,
+            on_epoch=False,
+            batch_size=batch_size,
+        )
 
     def on_fit_start(self) -> None:
         datamodule = getattr(self.trainer, "datamodule", None)

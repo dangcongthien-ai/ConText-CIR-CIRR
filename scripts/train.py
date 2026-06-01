@@ -24,12 +24,29 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", required=True, help="Path to YAML config.")
     parser.add_argument("--resume", default=None, help="Optional checkpoint path to resume.")
     parser.add_argument("--fast_dev_run", action="store_true", help="Run one train/val batch.")
+    parser.add_argument("--log_cc_grad_norm", action="store_true", help="Log separate contrastive/CC gradient norms.")
+    parser.add_argument("--cc_grad_norm_interval", type=int, default=None, help="Step interval for CC gradient norm logging.")
+    parser.add_argument("--text_cc_clean_only", action="store_true", help="Use only high-confidence phrase supervision for Text CC.")
+    parser.add_argument(
+        "--text_cc_clean_min_confidence",
+        type=float,
+        default=None,
+        help="Minimum phrase confidence when --text_cc_clean_only is enabled.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     cfg = load_config(args.config)
+    if args.log_cc_grad_norm:
+        cfg.train.log_cc_grad_norm = True
+    if args.cc_grad_norm_interval is not None:
+        cfg.train.cc_grad_norm_interval = args.cc_grad_norm_interval
+    if args.text_cc_clean_only:
+        cfg.loss.text_cc_clean_only = True
+    if args.text_cc_clean_min_confidence is not None:
+        cfg.loss.text_cc_clean_min_confidence = args.text_cc_clean_min_confidence
     seed_everything(cfg.project.seed)
 
     accelerator = cfg.train.accelerator
