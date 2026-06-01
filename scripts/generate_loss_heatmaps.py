@@ -257,7 +257,8 @@ def _page(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CIRR Loss Heatmaps</title>
+  <title>ConText-CIRR | Loss Heatmaps</title>
+  <meta name="description" content="Interactive heatmap viewer for contrastive and CL+CC phrase attention analysis in the ConText-CIRR workspace.">
   <style>
     :root {{
       --bg: #f6f7f9;
@@ -289,6 +290,7 @@ def _page(
       justify-content: space-between;
       gap: 16px;
     }}
+    .brand {{ display: grid; gap: 4px; }}
     h1 {{
       margin: 0;
       font-size: 18px;
@@ -515,7 +517,10 @@ def _page(
 <body>
   <header>
     <div class="bar">
-      <h1>CIRR Loss Heatmaps</h1>
+      <div class="brand">
+        <div class="sample-id">ConText-CIRR Workspace</div>
+        <h1>Loss Heatmaps</h1>
+      </div>
       <div class="muted">split={html.escape(state.split)} &middot; device={state.device.type} &middot; samples={len(state.samples_by_pair_id)}</div>
     </div>
   </header>

@@ -176,7 +176,8 @@ def _page(state: DatasetState, split: str, pair_id: str | None) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CIRR Dataset Viewer</title>
+  <title>ConText-CIRR | Dataset Viewer</title>
+  <meta name="description" content="Interactive dataset browser for CIRR reference images, captions, and target images in the ConText-CIRR workspace.">
   <style>
     :root {{
       --bg: #f6f7f9;
@@ -207,6 +208,7 @@ def _page(state: DatasetState, split: str, pair_id: str | None) -> str:
       justify-content: space-between;
       gap: 16px;
     }}
+    .brand {{ display: grid; gap: 4px; }}
     h1 {{ margin: 0; font-size: 18px; }}
     h2 {{
       margin: 4px 0 0;
@@ -424,7 +426,10 @@ def _page(state: DatasetState, split: str, pair_id: str | None) -> str:
 <body>
   <header>
     <div class="bar">
-      <h1>CIRR Dataset Viewer</h1>
+      <div class="brand">
+        <div class="eyebrow">ConText-CIRR Workspace</div>
+        <h1>Dataset Viewer</h1>
+      </div>
       <form id="sample-form" method="get" action="/">
         <select name="split">{_split_options(state, split)}</select>
         <input id="pair-input" name="pair_id" value="{selected_value}" placeholder="pair_id">

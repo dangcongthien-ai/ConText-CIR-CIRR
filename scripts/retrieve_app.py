@@ -166,132 +166,132 @@ def _page(
         f'<div class="warn">{html.escape(split)}: {html.escape(message)}</div>'
         for split, message in state.index_errors.items()
     )
-    status = (
-        f'<div class="alert">{html.escape(error)}</div>'
-        if error
-        else f'<div class="muted">{gallery_count:,} gallery images indexed on {state.device.type}</div>'
-    )
+    ready_status = f"{gallery_count:,} gallery images indexed on {state.device.type}"
+    status_class = "alert" if error else "muted"
+    status_text = error or ready_status
     preview = (
         f'<img class="preview-img" src="{query_preview}" alt="Query image preview">'
         if query_preview
-        else '<div class="preview-empty">No image</div>'
+        else '<div class="preview-empty">Choose an image to preview it instantly.</div>'
     )
-    empty_results = (
-        '<div class="empty">No results yet</div>'
-        if not results and not error
-        else ""
-    )
+    empty_results_class = "empty hidden" if results else "empty"
+    empty_results_text = "Upload an image and run a query to see ranked gallery matches."
     return f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CIR Retrieval Demo</title>
+  <title>ConText-CIRR | Retrieval Demo</title>
+  <meta name="description" content="Interactive image-plus-text retrieval demo for the ConText-CIRR pipeline on the CIRR dataset.">
   <style>
     :root {{
       color-scheme: light;
-      --bg: #f7f8fa;
+      --bg: #f4f7f5;
+      --bg-accent: #e8f4ef;
       --panel: #ffffff;
-      --text: #17202a;
+      --panel-soft: #f8fbfa;
+      --text: #18212f;
       --muted: #667085;
-      --line: #d8dee8;
+      --line: #d6e2db;
       --accent: #0f766e;
       --accent-dark: #115e59;
+      --accent-soft: #dff5ef;
       --danger: #b42318;
       --warn: #b54708;
+      --shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+      --radius: 16px;
+      --radius-sm: 10px;
     }}
     * {{ box-sizing: border-box; }}
     body {{
       margin: 0;
-      background: var(--bg);
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top left, rgba(15, 118, 110, 0.10), transparent 28%),
+        linear-gradient(180deg, var(--bg-accent) 0%, var(--bg) 26%, #f8faf9 100%);
       color: var(--text);
-      font-family: Arial, Helvetica, sans-serif;
+      font-family: "Segoe UI", Arial, Helvetica, sans-serif;
       letter-spacing: 0;
     }}
     header {{
-      border-bottom: 1px solid var(--line);
-      background: var(--panel);
+      border-bottom: 1px solid rgba(214, 226, 219, 0.9);
+      background: rgba(255, 255, 255, 0.88);
+      backdrop-filter: blur(12px);
     }}
     .bar {{
-      width: min(1180px, calc(100vw - 32px));
+      width: min(1200px, calc(100vw - 32px));
       margin: 0 auto;
-      padding: 14px 0;
+      padding: 20px 0 18px;
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: space-between;
-      gap: 16px;
+      gap: 18px;
+    }}
+    .hero {{
+      display: grid;
+      gap: 6px;
+      max-width: 680px;
+    }}
+    .eyebrow {{
+      color: var(--accent-dark);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
     }}
     h1 {{
       margin: 0;
-      font-size: 18px;
+      font-size: 28px;
+      line-height: 1.05;
+    }}
+    .hero-copy {{
+      color: #475467;
+      font-size: 14px;
+      line-height: 1.45;
+    }}
+    .muted, .alert {{
+      font-size: 13px;
       font-weight: 700;
+      border-radius: 999px;
+      padding: 10px 14px;
+      max-width: min(360px, 100%);
     }}
     .muted {{
-      color: var(--muted);
-      font-size: 13px;
-      white-space: nowrap;
+      color: #0f513d;
+      background: var(--accent-soft);
+      border: 1px solid rgba(15, 118, 110, 0.18);
+    }}
+    .alert {{
+      color: var(--danger);
+      background: #fdecea;
+      border: 1px solid rgba(180, 35, 24, 0.18);
     }}
     main {{
-      width: min(1180px, calc(100vw - 32px));
-      margin: 18px auto 32px;
+      width: min(1200px, calc(100vw - 32px));
+      margin: 22px auto 36px;
       display: grid;
-      grid-template-columns: 340px 1fr;
-      gap: 18px;
+      grid-template-columns: 380px 1fr;
+      gap: 20px;
       align-items: start;
     }}
     .panel {{
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.94);
+      border: 1px solid rgba(214, 226, 219, 0.92);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
     }}
-    .query {{
-      padding: 14px;
+    .preview-shell {{
+      padding: 14px 14px 0;
       display: grid;
-      gap: 12px;
-    }}
-    label {{
-      display: grid;
-      gap: 6px;
-      color: #344054;
-      font-size: 13px;
-      font-weight: 700;
-    }}
-    input, select, textarea {{
-      width: 100%;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      padding: 10px;
-      color: var(--text);
-      background: #fff;
-      font: inherit;
-      font-size: 14px;
-    }}
-    textarea {{
-      min-height: 92px;
-      resize: vertical;
-      line-height: 1.35;
-    }}
-    .row {{
-      display: grid;
-      grid-template-columns: 1fr 96px;
       gap: 10px;
     }}
-    button {{
-      height: 40px;
-      border: 0;
-      border-radius: 6px;
-      background: var(--accent);
-      color: #fff;
-      font-size: 14px;
-      font-weight: 700;
-      cursor: pointer;
-    }}
-    button:hover {{ background: var(--accent-dark); }}
     .preview {{
       overflow: hidden;
       aspect-ratio: 1 / 1;
-      border-bottom: 1px solid var(--line);
-      background: #eef2f6;
+      border: 1px dashed rgba(15, 118, 110, 0.26);
+      border-radius: 14px;
+      background: linear-gradient(180deg, #edf7f3 0%, #f7fbfa 100%);
       display: grid;
       place-items: center;
     }}
@@ -304,39 +304,136 @@ def _page(
     .preview-empty {{
       color: var(--muted);
       font-size: 13px;
+      text-align: center;
+      width: min(220px, 100%);
+      line-height: 1.45;
     }}
-    .alert {{
-      color: var(--danger);
+    .preview-meta {{
+      display: grid;
+      gap: 4px;
+      padding: 0 2px;
+    }}
+    .preview-title {{
+      font-size: 13px;
+      font-weight: 800;
+    }}
+    .preview-helper {{
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }}
+    .query {{
+      padding: 14px;
+      display: grid;
+      gap: 14px;
+    }}
+    label {{
+      display: grid;
+      gap: 6px;
+      color: #344054;
       font-size: 13px;
       font-weight: 700;
+    }}
+    input, select, textarea {{
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      padding: 11px 12px;
+      color: var(--text);
+      background: #fff;
+      font: inherit;
+      font-size: 14px;
+      transition: border-color 0.18s ease, box-shadow 0.18s ease;
+    }}
+    input:focus, select:focus, textarea:focus {{
+      outline: none;
+      border-color: rgba(15, 118, 110, 0.6);
+      box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.12);
+    }}
+    textarea {{
+      min-height: 110px;
+      resize: vertical;
+      line-height: 1.45;
+    }}
+    .row {{
+      display: grid;
+      grid-template-columns: 1fr 112px;
+      gap: 10px;
+    }}
+    .search-actions {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }}
+    .helper {{
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+      max-width: 200px;
+    }}
+    button {{
+      min-width: 126px;
+      height: 42px;
+      border: 0;
+      border-radius: 999px;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+      box-shadow: 0 12px 24px rgba(15, 118, 110, 0.22);
+    }}
+    button:hover {{ transform: translateY(-1px); }}
+    button:disabled {{ opacity: 0.72; cursor: wait; transform: none; }}
+    .warn-stack {{
+      display: grid;
+      gap: 8px;
     }}
     .warn {{
       color: var(--warn);
       font-size: 12px;
       font-weight: 700;
+      padding: 8px 10px;
+      border-radius: 10px;
+      background: #fff7ed;
+      border: 1px solid rgba(181, 71, 8, 0.16);
     }}
     .results-head {{
-      padding: 12px 14px;
+      padding: 18px 18px 14px;
       display: flex;
       justify-content: space-between;
-      gap: 12px;
-      border-bottom: 1px solid var(--line);
+      gap: 14px;
+      border-bottom: 1px solid rgba(214, 226, 219, 0.9);
+      align-items: flex-start;
+    }}
+    .results-copy {{
+      display: grid;
+      gap: 4px;
     }}
     .results-title {{
-      font-size: 14px;
-      font-weight: 700;
+      font-size: 18px;
+      font-weight: 800;
+    }}
+    .results-subtitle {{
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
     }}
     .grid {{
-      padding: 14px;
+      padding: 18px;
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
-      gap: 12px;
+      grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+      gap: 14px;
     }}
     .card {{
-      border: 1px solid var(--line);
-      border-radius: 8px;
+      border: 1px solid rgba(214, 226, 219, 0.95);
+      border-radius: 14px;
       overflow: hidden;
       background: #fff;
+      box-shadow: 0 10px 22px rgba(15, 23, 42, 0.04);
     }}
     .card img {{
       width: 100%;
@@ -346,14 +443,14 @@ def _page(
       background: #eef2f6;
     }}
     .meta {{
-      padding: 9px;
+      padding: 10px;
       display: grid;
       gap: 4px;
       min-width: 0;
     }}
     .name {{
       font-size: 12px;
-      font-weight: 700;
+      font-weight: 800;
       overflow-wrap: anywhere;
     }}
     .score {{
@@ -361,17 +458,18 @@ def _page(
       font-size: 12px;
     }}
     .empty {{
-      padding: 48px 14px;
+      padding: 56px 18px 20px;
       color: var(--muted);
       text-align: center;
       font-size: 14px;
+      line-height: 1.45;
     }}
-    @media (max-width: 820px) {{
+    .hidden {{ display: none; }}
+    @media (max-width: 900px) {{
       .bar {{
         align-items: flex-start;
         flex-direction: column;
       }}
-      .muted {{ white-space: normal; }}
       main {{ grid-template-columns: 1fr; }}
     }}
   </style>
@@ -379,44 +477,216 @@ def _page(
 <body>
   <header>
     <div class="bar">
-      <h1>CIR Retrieval Demo</h1>
-      {status}
+      <div class="hero">
+        <div class="eyebrow">ConText-CIRR Workspace</div>
+        <h1>Retrieval Demo</h1>
+        <div class="hero-copy">Upload one reference image, keep it in the form, and iterate on modification text without choosing the file again.</div>
+      </div>
+      <div id="status-banner" class="{status_class}" data-ready="{html.escape(ready_status)}">{html.escape(status_text)}</div>
     </div>
   </header>
   <main>
     <section class="panel">
-      <div class="preview">{preview}</div>
-      <form class="query" action="/search" method="post" enctype="multipart/form-data">
-        <label>Gallery
-          <select name="gallery_split">{split_options}</select>
+      <div class="preview-shell">
+        <div id="preview-frame" class="preview">{preview}</div>
+        <div class="preview-meta">
+          <div class="preview-title">Reference preview</div>
+          <div id="preview-helper" class="preview-helper">Preview appears immediately when you pick a file. The selected image stays in the form while you try new text queries.</div>
+        </div>
+      </div>
+      <form id="query-form" class="query" action="/search" method="post" enctype="multipart/form-data">
+        <label>Gallery split
+          <select id="gallery-split" name="gallery_split">{split_options}</select>
         </label>
         <label>Reference image
-          <input type="file" name="query_image" accept="image/*" required>
+          <input id="query-image" type="file" name="query_image" accept="image/*" required>
         </label>
         <label>Modification text
-          <textarea name="text" required>{html.escape(text)}</textarea>
+          <textarea id="query-text" name="text" required>{html.escape(text)}</textarea>
         </label>
         <div class="row">
           <label>Reference name
-            <input type="text" name="reference_name" value="{html.escape(reference_name)}">
+            <input id="reference-name" type="text" name="reference_name" value="{html.escape(reference_name)}">
           </label>
           <label>Top K
-            <input type="number" name="top_k" min="1" max="50" value="{top_k}">
+            <input id="top-k" type="number" name="top_k" min="1" max="50" value="{top_k}">
           </label>
         </div>
-        <button type="submit">Search</button>
-        {index_errors}
+        <div class="search-actions">
+          <button id="search-button" type="submit">Search</button>
+          <div class="helper">Use Ctrl+Enter in the text box to search. If text already exists, choosing a new image will run a fresh search automatically.</div>
+        </div>
+        <div class="warn-stack">{index_errors}</div>
       </form>
     </section>
     <section class="panel">
       <div class="results-head">
-        <div class="results-title">Results</div>
-        <div class="muted">{html.escape(gallery_split)} &middot; {len(results)} shown</div>
+        <div class="results-copy">
+          <div class="results-title">Retrieved Gallery Images</div>
+          <div class="results-subtitle">FAISS search over the selected CIRR gallery split.</div>
+        </div>
+        <div id="results-meta" class="muted">{html.escape(gallery_split)} &middot; {len(results)} shown</div>
       </div>
-      {empty_results}
-      <div class="grid">{result_cards}</div>
+      <div id="results-empty" class="{empty_results_class}">{empty_results_text}</div>
+      <div id="results-grid" class="grid">{result_cards}</div>
     </section>
   </main>
+  <script>
+    const form = document.querySelector("#query-form");
+    const fileInput = document.querySelector("#query-image");
+    const textInput = document.querySelector("#query-text");
+    const referenceInput = document.querySelector("#reference-name");
+    const galleryInput = document.querySelector("#gallery-split");
+    const topKInput = document.querySelector("#top-k");
+    const previewFrame = document.querySelector("#preview-frame");
+    const previewHelper = document.querySelector("#preview-helper");
+    const searchButton = document.querySelector("#search-button");
+    const statusBanner = document.querySelector("#status-banner");
+    const resultsGrid = document.querySelector("#results-grid");
+    const resultsMeta = document.querySelector("#results-meta");
+    const resultsEmpty = document.querySelector("#results-empty");
+    let previewObjectUrl = null;
+    let activeController = null;
+
+    function escapeHtml(value) {{
+      const replacements = {{ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }};
+      return String(value).replace(/[&<>"']/g, (char) => replacements[char]);
+    }}
+
+    function renderStatus(message, isError = false) {{
+      statusBanner.className = isError ? "alert" : "muted";
+      statusBanner.textContent = message || statusBanner.dataset.ready || "";
+    }}
+
+    function renderPreview(src, altText) {{
+      if (!src) {{
+        previewFrame.innerHTML = '<div class="preview-empty">Choose an image to preview it instantly.</div>';
+        return;
+      }}
+      previewFrame.innerHTML = `<img class="preview-img" src="${{src}}" alt="${{escapeHtml(altText || 'Query image preview')}}">`;
+    }}
+
+    function updateReferenceFromFile(file) {{
+      if (!file || referenceInput.value.trim()) {{
+        return;
+      }}
+      referenceInput.value = file.name.replace(/\.[^.]+$/, "");
+    }}
+
+    function previewSelectedFile() {{
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) {{
+        return false;
+      }}
+      if (previewObjectUrl) {{
+        URL.revokeObjectURL(previewObjectUrl);
+      }}
+      previewObjectUrl = URL.createObjectURL(file);
+      renderPreview(previewObjectUrl, file.name);
+      previewHelper.textContent = "Image is loaded locally and kept in the form while you retry text queries.";
+      updateReferenceFromFile(file);
+      return true;
+    }}
+
+    function renderResults(results, split) {{
+      const rows = Array.isArray(results) ? results : [];
+      resultsMeta.textContent = `${{split}} | ${{rows.length}} shown`;
+      if (!rows.length) {{
+        resultsGrid.innerHTML = "";
+        resultsEmpty.classList.remove("hidden");
+        return;
+      }}
+      resultsEmpty.classList.add("hidden");
+      resultsGrid.innerHTML = rows.map((row) => {{
+        const imageName = String(row.image_name || "");
+        const gallerySplit = String(row.gallery_split || row.split || split || "val");
+        const imageUrl = `/gallery/${{encodeURIComponent(gallerySplit)}}/${{encodeURIComponent(imageName)}}`;
+        const score = Number(row.score || 0);
+        const rank = Number(row.rank || 0);
+        return `<article class="card"><img src="${{imageUrl}}" alt="${{escapeHtml(imageName)}}"><div class="meta"><div class="name">#${{rank}} ${{escapeHtml(imageName)}}</div><div class="score">score ${{score.toFixed(4)}}</div></div></article>`;
+      }}).join("");
+    }}
+
+    async function submitSearch() {{
+      const file = fileInput.files && fileInput.files[0];
+      const textValue = textInput.value.trim();
+      if (!file) {{
+        renderStatus("Choose a reference image before searching.", true);
+        return;
+      }}
+      if (!textValue) {{
+        renderStatus("Enter modification text before searching.", true);
+        return;
+      }}
+      previewSelectedFile();
+      if (activeController) {{
+        activeController.abort();
+      }}
+      const controller = new AbortController();
+      activeController = controller;
+      const previousLabel = searchButton.textContent;
+      searchButton.disabled = true;
+      searchButton.textContent = "Searching...";
+      renderStatus("Searching the selected gallery...", false);
+      try {{
+        const formData = new FormData(form);
+        const response = await fetch("/api/search", {{
+          method: "POST",
+          body: formData,
+          signal: controller.signal,
+        }});
+        const payload = await response.json().catch(() => ({{ detail: "Search failed." }}));
+        if (!response.ok) {{
+          throw new Error(payload.detail || "Search failed.");
+        }}
+        referenceInput.value = payload.reference_name || referenceInput.value;
+        renderResults(payload.results || [], payload.gallery_split || galleryInput.value);
+        renderStatus(`${{(payload.results || []).length}} results loaded from ${{payload.gallery_split || galleryInput.value}}.`, false);
+      }} catch (error) {{
+        if (error.name === "AbortError") {{
+          return;
+        }}
+        renderStatus(error.message || "Search failed.", true);
+      }} finally {{
+        if (activeController === controller) {{
+          activeController = null;
+        }}
+        searchButton.disabled = false;
+        searchButton.textContent = previousLabel;
+      }}
+    }}
+
+    fileInput.addEventListener("change", () => {{
+      const ready = previewSelectedFile();
+      if (ready && textInput.value.trim()) {{
+        submitSearch();
+      }}
+    }});
+
+    form.addEventListener("submit", (event) => {{
+      event.preventDefault();
+      submitSearch();
+    }});
+
+    textInput.addEventListener("keydown", (event) => {{
+      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {{
+        event.preventDefault();
+        submitSearch();
+      }}
+    }});
+
+    galleryInput.addEventListener("change", () => {{
+      if (fileInput.files && fileInput.files.length && textInput.value.trim()) {{
+        submitSearch();
+      }}
+    }});
+
+    topKInput.addEventListener("change", () => {{
+      if (fileInput.files && fileInput.files.length && textInput.value.trim()) {{
+        submitSearch();
+      }}
+    }});
+  </script>
 </body>
 </html>"""
 
@@ -643,7 +913,7 @@ def create_app(
     ) -> str:
         return _search_page_response(state, query_image, text, top_k, gallery_split, reference_name)
 
-    @app.post("/api/search")
+    @app.post("/api/search", responses={400: {"description": "Bad request"}})
     def search_api(
         query_image: Annotated[UploadFile, File(...)],
         text: Annotated[str, Form(...)],
@@ -651,7 +921,10 @@ def create_app(
         gallery_split: Annotated[str, Form()] = "val",
         reference_name: Annotated[str, Form()] = "",
     ) -> JSONResponse:
-        return _search_api_response(state, query_image, text, top_k, gallery_split, reference_name)
+        try:
+            return _search_api_response(state, query_image, text, top_k, gallery_split, reference_name)
+        except Exception as exc:
+            return JSONResponse({"detail": str(exc)}, status_code=400)
 
     @app.get(
         "/gallery/{gallery_split}/{image_name}",
