@@ -66,13 +66,30 @@ def _load_clip_tokenizer_from_hub_files(backbone: str) -> CLIPTokenizerFast:
         raise
 
 
+def _load_clip_model(model_cls, backbone: str):
+    try:
+        return model_cls.from_pretrained(backbone, use_safetensors=True)
+    except (OSError, ValueError) as safetensors_error:
+        warnings.warn(
+            f"Could not load {model_cls.__name__} for {backbone!r} with safetensors; "
+            f"retrying with PyTorch weights. Original error: {safetensors_error}"
+        )
+        try:
+            return model_cls.from_pretrained(backbone, use_safetensors=False)
+        except Exception as pytorch_error:
+            raise RuntimeError(
+                f"Could not load {model_cls.__name__} for {backbone!r} with safetensors or PyTorch weights. "
+                f"Safetensors error was: {safetensors_error}"
+            ) from pytorch_error
+
+
 class CLIPTokenEncoders(nn.Module):
     """Expose CLIP hidden states used by the ConText-style fusion model."""
 
     def __init__(self, backbone: str) -> None:
         super().__init__()
-        self.vision_model = CLIPVisionModel.from_pretrained(backbone, use_safetensors=True)
-        self.text_model = CLIPTextModel.from_pretrained(backbone, use_safetensors=True)
+        self.vision_model = _load_clip_model(CLIPVisionModel, backbone)
+        self.text_model = _load_clip_model(CLIPTextModel, backbone)
         self.tokenizer = _load_clip_tokenizer(backbone)
         self.image_embedding_dim = int(self.vision_model.config.hidden_size)
         self.text_embedding_dim = int(self.text_model.config.hidden_size)
