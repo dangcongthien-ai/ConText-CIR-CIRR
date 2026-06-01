@@ -62,48 +62,123 @@ PREPOSITIONS = {
 }
 
 PRONOUN_ONLY = {"it", "its", "they", "them", "there", "this", "that", "these", "those", "i"}
-EDIT_VERBS = {
-    "add",
-    "include",
-    "insert",
-    "remove",
-    "delete",
-    "take",
-    "make",
-    "change",
-    "replace",
-    "put",
-    "place",
-    "move",
-    "show",
-    "have",
-    "turn",
-    "crop",
-    "isolate",
-    "focus",
-    "sit",
-}
 EDIT_VERB_ACTIONS = {
     "add": "add",
+    "adds": "add",
     "include": "add",
+    "includes": "add",
     "insert": "add",
+    "introduce": "add",
+    "plant": "add",
     "remove": "remove",
+    "removes": "remove",
     "delete": "remove",
+    "exclude": "remove",
+    "excludes": "remove",
+    "omit": "remove",
+    "hide": "remove",
     "take": "remove",
     "make": "make",
+    "makes": "make",
     "change": "change",
+    "changes": "change",
+    "alter": "change",
+    "switch": "change",
+    "transform": "change",
+    "convert": "change",
     "replace": "replace",
+    "replaces": "replace",
     "put": "put",
+    "puts": "put",
     "place": "place",
+    "places": "place",
     "move": "move",
+    "moves": "move",
     "show": "show",
+    "shows": "show",
+    "display": "show",
+    "displays": "show",
+    "capture": "show",
+    "captures": "show",
+    "photograph": "show",
+    "shoot": "show",
     "have": "have",
+    "has": "have",
     "turn": "turn",
+    "turns": "turn",
+    "rotate": "turn",
+    "rotates": "turn",
+    "flip": "turn",
+    "flips": "turn",
+    "tilt": "turn",
+    "tilts": "turn",
     "crop": "crop",
+    "crops": "crop",
     "isolate": "isolate",
+    "isolates": "isolate",
     "focus": "focus",
-    "sit": "unknown",
+    "focuses": "focus",
+    "zoom": "zoom",
+    "paint": "make",
+    "paints": "make",
+    "color": "make",
+    "colour": "make",
+    "darken": "make",
+    "lighten": "make",
+    "blur": "make",
+    "fill": "add",
+    "fills": "add",
+    "open": "open",
+    "opens": "open",
+    "close": "close",
+    "closes": "close",
+    "hang": "place",
+    "hangs": "place",
+    "line": "place",
+    "arrange": "place",
+    "set": "place",
+    "slide": "move",
+    "stand": "pose",
+    "stands": "pose",
+    "sit": "pose",
+    "sits": "pose",
+    "lay": "pose",
+    "lie": "pose",
+    "lying": "pose",
+    "face": "pose",
+    "facing": "pose",
+    "hold": "pose",
+    "holds": "pose",
+    "fold": "pose",
+    "charge": "state",
+    "use": "show",
+    "cut": "make",
+    "knead": "make",
+    "wipe": "make",
+    "tie": "make",
+    "roll": "make",
+    "stack": "place",
+    "give": "add",
+    "gives": "add",
+    "grow": "add",
+    "leave": "keep",
+    "keep": "keep",
+    "preserve": "keep",
+    "reduce": "change",
+    "increase": "change",
+    "decrease": "change",
+    "lessen": "change",
+    "fewer": "change",
+    "less": "change",
+    "more": "change",
+    "bigger": "change",
+    "larger": "change",
+    "smaller": "change",
+    "closer": "zoom",
+    "goes": "change",
+    "go": "change",
 }
+EDIT_VERBS = set(EDIT_VERB_ACTIONS)
 CLAUSE_STARTERS = tuple(sorted(EDIT_VERBS | {"stand", "lie"}, key=len, reverse=True))
 ATTRIBUTE_STARTERS = {
     "white",
@@ -149,6 +224,9 @@ CAPTION_NORMALIZATION_MAP = {
     "anmial": "animal",
     "colour": "color",
     "concret": "concrete",
+    "stading": "standing",
+    "foward": "forward",
+    "diferent": "different",
 }
 LOCATION_PREPOSITIONS = (
     "next to",
@@ -200,6 +278,124 @@ LEADING_OBJECT_WORDS = {
     "less",
     "fewer",
     "only",
+}
+COUNT_CHANGE_VERBS = {"increase", "decrease", "reduce", "fewer", "less", "more", "bigger", "larger", "smaller"}
+STYLE_CHANGE_VERBS = {"paint", "color", "colour", "darken", "lighten", "blur"}
+POSE_VERBS = {"stand", "stands", "sit", "sits", "lay", "lie", "lying", "face", "facing", "hold", "holds", "fold"}
+STATE_VERBS = {
+    "is",
+    "are",
+    "was",
+    "were",
+    "has",
+    "have",
+    "looks",
+    "look",
+    "stands",
+    "stand",
+    "sits",
+    "sit",
+    "rests",
+    "rest",
+    "walks",
+    "walk",
+    "runs",
+    "run",
+    "plays",
+    "play",
+    "holds",
+    "hold",
+    "hangs",
+    "hang",
+    "faces",
+    "facing",
+    "shows",
+    "show",
+}
+STATE_SUBJECT_STARTERS = {
+    "a",
+    "an",
+    "the",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "this",
+    "that",
+    "these",
+    "those",
+    "it",
+    "its",
+    "it's",
+    "there",
+    "be",
+    "another",
+    "additional",
+    "small",
+    "big",
+    "large",
+    "larger",
+    "smaller",
+    "brown",
+    "black",
+    "white",
+    "gray",
+    "grey",
+    "green",
+    "target",
+    "photo",
+    "image",
+    "group",
+    "dog",
+    "dogs",
+    "animal",
+    "animals",
+    "bird",
+    "birds",
+    "person",
+    "people",
+    "man",
+    "woman",
+    "monkey",
+    "gorilla",
+    "panda",
+    "horse",
+    "cat",
+    "puppy",
+    "puppies",
+    "elephant",
+    "ox",
+    "adult",
+    "baby",
+    "sea",
+    "men",
+    "boy",
+    "guy",
+    "monkeys",
+    "rabbit",
+    "parrots",
+    "penguin",
+    "rat",
+    "parrot",
+    "stingray",
+    "spotted",
+    "inverted",
+    "several",
+    "most",
+    "farthest",
+    "nearest",
+    "sofa",
+    "book",
+    "granite",
+    "snow",
+    "train",
+    "food",
 }
 TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z'\-]*")
 CONNECTOR_RE = re.compile(r"\b(?:then|and)\b|[;,.]", re.IGNORECASE)
@@ -451,6 +647,17 @@ def _split_make_object_attribute(rest: str) -> tuple[str | None, str | None]:
     return _clean_field(compact), None
 
 
+def _split_give_object_target(rest: str) -> tuple[str | None, str | None]:
+    tokens = _compact_space(rest).split()
+    if not tokens:
+        return None, None
+    target_starters = LEADING_OBJECT_WORDS | ATTRIBUTE_STARTERS | {"some", "several", "many", "few", "half"}
+    for index in range(1, len(tokens)):
+        if tokens[index].lower() in target_starters and _has_substantive_object_tokens(tokens[:index]):
+            return _clean_field(" ".join(tokens[:index])), _clean_field(" ".join(tokens[index:]))
+    return _clean_field(rest), None
+
+
 def _build_action(
     *,
     action: str,
@@ -472,6 +679,59 @@ def _build_action(
     }
 
 
+def _verb_alt(verbs: set[str] | list[str] | tuple[str, ...]) -> str:
+    return "|".join(re.escape(verb) for verb in sorted(verbs, key=len, reverse=True))
+
+
+def _match_leading_verb(text: str, verbs: set[str] | list[str] | tuple[str, ...]):
+    return re.match(rf"^(?P<verb>{_verb_alt(verbs)})(?:\s+(?P<rest>.*))?$", text)
+
+
+def _split_marker(text: str, markers: tuple[str, ...]) -> tuple[str, str, str] | None:
+    lowered = text.lower()
+    for marker in sorted(markers, key=len, reverse=True):
+        pattern = rf"\b{re.escape(marker)}\b"
+        match = re.search(pattern, lowered)
+        if match and match.start() > 0:
+            return text[: match.start()].strip(" ,.;"), marker, text[match.end() :].strip(" ,.;")
+    return None
+
+
+def _split_subject_predicate(text: str) -> tuple[str | None, str | None, str | None]:
+    tokens = text.split()
+    for index, token in enumerate(tokens):
+        if token.lower() in STATE_VERBS and index > 0:
+            subject = " ".join(tokens[:index])
+            predicate = " ".join(tokens[index + 1 :])
+            return _clean_field(subject), token.lower(), _clean_field(predicate)
+    return None, None, None
+
+
+def _looks_like_state_fragment(text: str) -> bool:
+    tokens = _tokens(text)
+    if not tokens:
+        return False
+    first = tokens[0].lower()
+    if first in STATE_SUBJECT_STARTERS:
+        return True
+    if first in ATTRIBUTE_STARTERS or first in {"different", "similar", "same", "only", "no", "just", "many"}:
+        return True
+    return first.endswith("er") and first not in {"water", "flower", "another"}
+
+
+def _state_action(raw_clause: str, lowered: str, *, confidence: float = 0.45) -> dict[str, Any]:
+    subject, verb, predicate = _split_subject_predicate(lowered)
+    if subject and verb:
+        return _build_action(
+            action="state",
+            raw_clause=raw_clause,
+            obj=subject,
+            attribute=predicate,
+            confidence=confidence,
+        )
+    return _build_action(action="state", raw_clause=raw_clause, obj=lowered, confidence=max(0.25, confidence - 0.1))
+
+
 def extract_edit_action_from_clause(clause: str, stanza_sentence: Any = None) -> dict[str, Any]:
     del stanza_sentence
     raw_clause = _compact_space(clause)
@@ -479,6 +739,69 @@ def extract_edit_action_from_clause(clause: str, stanza_sentence: Any = None) ->
     lowered = normalized.lower().strip(" .;,")
     if not lowered:
         return _build_action(action="unknown", raw_clause=raw_clause, confidence=0.0)
+
+    there_now_match = re.match(r"^there\s+(?:was|were|is|are)\s+(?P<object>.+?)\s+-\s+now\s+(?P<target>.+)$", lowered)
+    if there_now_match:
+        return _build_action(
+            action="change",
+            raw_clause=raw_clause,
+            obj=there_now_match.group("object"),
+            target=there_now_match.group("target"),
+            confidence=0.82,
+        )
+
+    there_now_match = re.match(r"^there\s+(?:was|were|is|are)\s+(?P<object>.+?)\s+now\s+(?P<target>.+)$", lowered)
+    if there_now_match:
+        return _build_action(
+            action="change",
+            raw_clause=raw_clause,
+            obj=there_now_match.group("object"),
+            target=there_now_match.group("target"),
+            confidence=0.76,
+        )
+
+    goes_match = re.match(r"^(?:goes?|went)\s+from\s+(?P<object>.+?)\s+to\s+(?P<target>.+)$", lowered)
+    if goes_match:
+        return _build_action(
+            action="change",
+            raw_clause=raw_clause,
+            obj=goes_match.group("object"),
+            target=goes_match.group("target"),
+            confidence=0.84,
+        )
+
+    unlike_show_match = re.search(r"(?:i\s+want\s+)?(?:the\s+)?target\s+(?:image|photo)?\s*(?:to\s+)?(?:show|shows)\s+(?P<object>.+)$", lowered)
+    if lowered.startswith(("unlike ", "instead of ")) and unlike_show_match:
+        return _build_action(
+            action="show",
+            raw_clause=raw_clause,
+            obj=unlike_show_match.group("object"),
+            confidence=0.72,
+        )
+
+    i_want_show_match = re.match(r"^i\s+want\s+(?:the\s+)?(?:target\s+)?(?:image\s+|photo\s+)?(?:to\s+)?show\s+(?P<object>.+)$", lowered)
+    if i_want_show_match:
+        return _build_action(action="show", raw_clause=raw_clause, obj=i_want_show_match.group("object"), confidence=0.72)
+
+    unlike_want_match = re.match(r"^unlike\s+(?P<object>.+?),\s*i\s+want\s+(?P<target>.+)$", lowered)
+    if unlike_want_match:
+        return _build_action(
+            action="replace",
+            raw_clause=raw_clause,
+            obj=unlike_want_match.group("object"),
+            target=unlike_want_match.group("target"),
+            confidence=0.66,
+        )
+
+    instead_prefix = re.match(r"^instead\s+of\s+(?P<object>.+?)(?:,\s*|\s+)(?P<target>.+)$", lowered)
+    if instead_prefix:
+        return _build_action(
+            action="replace",
+            raw_clause=raw_clause,
+            obj=instead_prefix.group("object"),
+            target=instead_prefix.group("target"),
+            confidence=0.70,
+        )
 
     take_match = re.match(r"^take\s+(?P<object>.+?)\s+(?P<location>out of|off|from)\s+(?P<locrest>.+)$", lowered)
     if take_match:
@@ -491,15 +814,56 @@ def extract_edit_action_from_clause(clause: str, stanza_sentence: Any = None) ->
             confidence=0.88,
         )
 
+    take_view_match = re.match(r"^take\s+(?P<rest>(?:shot|close|closer|view|photo|photograph).*)$", lowered)
+    if take_view_match:
+        obj, location = _split_location(take_view_match.group("rest"))
+        return _build_action(action="show", raw_clause=raw_clause, obj=obj, location=location, confidence=0.74)
+
+    take_away_match = re.match(r"^take\s+away\s+(?P<object>.+)$", lowered)
+    if take_away_match:
+        obj, location = _split_location(take_away_match.group("object"))
+        return _build_action(action="remove", raw_clause=raw_clause, obj=obj, location=location, confidence=0.82)
+
+    take_generic_match = re.match(r"^take\s+(?P<object>.+)$", lowered)
+    if take_generic_match:
+        obj, location = _split_location(take_generic_match.group("object"))
+        return _build_action(action="move", raw_clause=raw_clause, obj=obj, location=location, confidence=0.58)
+
     remove_match = re.match(r"^(?:remove|delete)\s+(?P<object>.+)$", lowered)
     if remove_match:
         obj, location = _split_location(remove_match.group("object"))
         return _build_action(action="remove", raw_clause=raw_clause, obj=obj, location=location, confidence=0.92)
 
-    add_match = re.match(r"^(?:add|include|insert)\s+(?P<object>.+)$", lowered)
+    remove_match = re.match(r"^(?:exclude|omit|hide)\s+(?P<object>.+)$", lowered)
+    if remove_match:
+        obj, location = _split_location(remove_match.group("object"))
+        return _build_action(action="remove", raw_clause=raw_clause, obj=obj, location=location, confidence=0.82)
+
+    add_match = re.match(r"^(?:add|include|insert|introduce|plant)\s+(?P<object>.+)$", lowered)
     if add_match:
         obj, location = _split_location(add_match.group("object"))
         return _build_action(action="add", raw_clause=raw_clause, obj=obj, location=location, confidence=0.92)
+
+    give_match = re.match(r"^give\s+(?P<object>.+?)\s+(?P<target>(?:a|an|the|one|two|three|four|five|six|seven|eight|nine|ten|more|less|fewer|some|[a-z]+).+)$", lowered)
+    if give_match:
+        obj, target = _split_give_object_target(f"{give_match.group('object')} {give_match.group('target')}")
+        return _build_action(
+            action="add",
+            raw_clause=raw_clause,
+            obj=obj,
+            target=target,
+            confidence=0.78,
+        )
+
+    count_match = _match_leading_verb(lowered, COUNT_CHANGE_VERBS)
+    if count_match:
+        verb = count_match.group("verb")
+        rest = count_match.group("rest") or ""
+        target_split = _split_marker(rest, ("to", "into"))
+        if target_split:
+            obj, _, target = target_split
+            return _build_action(action="change", raw_clause=raw_clause, obj=obj, attribute=verb, target=target, confidence=0.84)
+        return _build_action(action="change", raw_clause=raw_clause, obj=rest, attribute=verb, confidence=0.68)
 
     make_match = re.match(r"^make\s+(?P<rest>.+)$", lowered)
     if make_match:
@@ -530,6 +894,11 @@ def extract_edit_action_from_clause(clause: str, stanza_sentence: Any = None) ->
             confidence=0.90,
         )
 
+    change_object_match = re.match(r"^(?:change|alter|switch|transform|convert)\s+(?P<object>.+)$", lowered)
+    if change_object_match:
+        obj, location = _split_location(change_object_match.group("object"))
+        return _build_action(action="change", raw_clause=raw_clause, obj=obj, location=location, confidence=0.66)
+
     replace_match = re.match(r"^replace\s+(?P<object>.+?)\s+with\s+(?P<target>.+)$", lowered)
     if replace_match:
         return _build_action(
@@ -539,6 +908,10 @@ def extract_edit_action_from_clause(clause: str, stanza_sentence: Any = None) ->
             target=replace_match.group("target"),
             confidence=0.90,
         )
+
+    replace_with_match = re.match(r"^replace\s+with\s+(?P<target>.+)$", lowered)
+    if replace_with_match:
+        return _build_action(action="replace", raw_clause=raw_clause, target=replace_with_match.group("target"), confidence=0.62)
 
     instead_match = re.match(r"^(?P<target>.+?)\s+instead of\s+(?P<object>.+)$", lowered)
     if instead_match:
@@ -550,18 +923,76 @@ def extract_edit_action_from_clause(clause: str, stanza_sentence: Any = None) ->
             confidence=0.74,
         )
 
-    move_like_match = re.match(r"^(?P<verb>put|place|move|show|have|turn|crop|isolate|focus)\s+(?P<rest>.+)$", lowered)
+    style_match = _match_leading_verb(lowered, STYLE_CHANGE_VERBS)
+    if style_match:
+        verb = style_match.group("verb")
+        rest = style_match.group("rest") or ""
+        obj, attribute = _split_make_object_attribute(rest)
+        location = None
+        if attribute:
+            attribute, location = _split_location(attribute)
+        return _build_action(action="make", raw_clause=raw_clause, obj=obj, attribute=attribute or verb, location=location, confidence=0.76)
+
+    fill_match = re.match(r"^fill(?:\s+up)?\s+(?P<object>.+?)(?:\s+with\s+(?P<target>.+))?$", lowered)
+    if fill_match:
+        return _build_action(
+            action="add",
+            raw_clause=raw_clause,
+            obj=fill_match.group("object"),
+            target=fill_match.group("target"),
+            confidence=0.80,
+        )
+
+    open_close_match = re.match(r"^(?P<verb>open|close)(?:\s+up)?\s+(?P<object>.+)$", lowered)
+    if open_close_match:
+        obj, location = _split_location(open_close_match.group("object"))
+        return _build_action(action=open_close_match.group("verb"), raw_clause=raw_clause, obj=obj, location=location, confidence=0.82)
+
+    light_up_match = re.match(r"^light\s+up\s+(?P<object>.+)$", lowered)
+    if light_up_match:
+        return _build_action(action="make", raw_clause=raw_clause, obj=light_up_match.group("object"), attribute="light up", confidence=0.74)
+
+    look_at_match = re.match(r"^look\s+at\s+(?P<object>.+)$", lowered)
+    if look_at_match:
+        obj, location = _split_location(look_at_match.group("object"))
+        return _build_action(action="show", raw_clause=raw_clause, obj=obj, location=location, confidence=0.62)
+
+    mirror_match = re.match(r"^mirror\s+(?P<object>.+)$", lowered)
+    if mirror_match:
+        return _build_action(action="turn", raw_clause=raw_clause, obj=mirror_match.group("object"), attribute="mirror", confidence=0.72)
+
+    scoop_match = re.match(r"^scoop(?:\s+up)?\s+(?P<object>.+)$", lowered)
+    if scoop_match:
+        return _build_action(action="make", raw_clause=raw_clause, obj=scoop_match.group("object"), confidence=0.62)
+
+    shot_match = re.match(r"^(?:shot|taken)\s+(?P<object>.+)$", lowered)
+    if shot_match:
+        obj, location = _split_location(shot_match.group("object"))
+        return _build_action(action="show", raw_clause=raw_clause, obj=obj, location=location, confidence=0.54)
+
+    zoom_match = re.match(r"^(?P<verb>zoom|closer|close\s+up|get\s+closer|get\s+close|get\s+away)(?:\s+(?P<rest>.*))?$", lowered)
+    if zoom_match:
+        rest = zoom_match.group("rest") or zoom_match.group("verb")
+        obj, location = _split_location(rest)
+        return _build_action(action="zoom", raw_clause=raw_clause, obj=obj, location=location, confidence=0.74)
+
+    move_like_match = re.match(
+        r"^(?P<verb>put|place|move|show|shows|display|capture|photograph|shoot|have|has|turn|rotate|flip|tilt|crop|isolate|focus|hang|line|arrange|set|slide|stand|sit|lay|lie|face|facing|hold|fold|charge|use|cut|knead|wipe|tie|stack|roll|grow|lessen|leave|keep|preserve)\s+(?P<rest>.+)$",
+        lowered,
+    )
     if move_like_match:
         verb = move_like_match.group("verb")
         obj, location = _split_location(move_like_match.group("rest"))
         action = EDIT_VERB_ACTIONS.get(verb, "unknown")
-        if action == "turn" and obj and location is None:
+        if action == "turn" and verb in {"tilt", "tilts", "flip", "flips", "rotate", "rotates"}:
+            return _build_action(action=action, raw_clause=raw_clause, obj=obj, location=location, confidence=0.78)
+        if action in {"turn", "pose"} and obj and location is None:
             object_text, attribute = _split_make_object_attribute(obj)
             attribute_location = None
             if attribute:
                 attribute, attribute_location = _split_location(attribute)
             return _build_action(
-                action="turn",
+                action=action,
                 raw_clause=raw_clause,
                 obj=object_text,
                 attribute=attribute,
@@ -569,6 +1000,16 @@ def extract_edit_action_from_clause(clause: str, stanza_sentence: Any = None) ->
                 confidence=0.78,
             )
         return _build_action(action=action, raw_clause=raw_clause, obj=obj, location=location, confidence=0.78)
+
+    target_match = re.match(r"^target\s+(?:image|photo)?\s*(?:on|with|is|has|shows?)\s+(?P<object>.+)$", lowered)
+    if target_match:
+        return _build_action(action="show", raw_clause=raw_clause, obj=target_match.group("object"), confidence=0.58)
+
+    if lowered.startswith("now "):
+        return _state_action(raw_clause, lowered, confidence=0.40)
+
+    if _looks_like_state_fragment(lowered):
+        return _state_action(raw_clause, lowered, confidence=0.44)
 
     unknown_object, unknown_location = _split_location(lowered)
     return _build_action(

@@ -5,13 +5,15 @@ import math
 from cir_pipeline.config import config_to_dict, load_config
 
 
-def test_default_config_loads():
+def test_default_cl_cc_config_loads_as_best_candidate():
     cfg = load_config("configs/cirr_context_cir_cl_cc.yaml")
     data = config_to_dict(cfg)
     assert data["project"]["name"] == "CIR_Pipeline"
     assert data["data"]["metadata_root"] == "CIRR/cirr"
     assert data["data"]["stanza_resources_dir"] == ".stanza_resources"
     assert data["data"]["stanza_download_method"] == "none"
+    assert data["data"]["noun_phrase_backend"] == "stanza"
+    assert data["data"]["noun_phrase_extractor"] == "constituency_minimal_np"
     assert data["faiss"]["index_type"] == "flat_ip"
     assert data["model"]["freeze_vision_encoder"] is True
     assert data["model"]["freeze_text_encoder"] is True
@@ -19,9 +21,11 @@ def test_default_config_loads():
     assert data["model"]["trainable_text_layers"] == 2
     assert data["model"]["use_gradient_checkpointing"] is True
     assert math.isclose(data["loss"]["lambda_cont"], 1.0)
-    assert math.isclose(data["loss"]["lambda_cc"], 0.2)
+    assert math.isclose(data["loss"]["lambda_cc"], 0.08)
     assert math.isclose(data["loss"]["epsilon_cc"], 0.0)
     assert math.isclose(data["loss"]["query_negative_weight"], 0.1)
+    assert data["loss"]["text_cc_clean_only"] is True
+    assert math.isclose(data["loss"]["text_cc_clean_min_confidence"], 0.7)
     assert math.isclose(data["train"]["encoder_learning_rate"], 2.0e-6)
     assert math.isclose(data["train"]["encoder_weight_decay"], 5.0e-3)
     assert data["train"]["batch_size"] == 64
@@ -29,9 +33,10 @@ def test_default_config_loads():
     assert data["train"]["early_stopping_patience"] == 3
     assert math.isclose(data["train"]["early_stopping_min_delta"], 0.005)
     assert data["train"]["save_top_k"] == 1
-    assert data["logger"]["experiment_name"] == "cirr_vitb32_cl_cc"
+    assert data["logger"]["experiment_name"] == "cirr_vitb32_cl_cc_best"
 
-def test_variant_configs_load():
+
+def test_only_two_canonical_training_configs_remain():
     variants = {
         "configs/cirr_context_cir_cl.yaml": {
             "experiment_name": "cirr_vitb32_cl",
@@ -42,31 +47,7 @@ def test_variant_configs_load():
             "clean_only": False,
         },
         "configs/cirr_context_cir_cl_cc.yaml": {
-            "experiment_name": "cirr_vitb32_cl_cc",
-            "lambda_cont": 1.0,
-            "lambda_cc": 0.2,
-            "backend": "stanza",
-            "extractor": "dependency",
-            "clean_only": False,
-        },
-        "configs/cirr_context_cir_cl_cc_min_np.yaml": {
-            "experiment_name": "cirr_vitb32_cl_cc_min_np",
-            "lambda_cont": 1.0,
-            "lambda_cc": 0.2,
-            "backend": "stanza",
-            "extractor": "constituency_minimal_np",
-            "clean_only": False,
-        },
-        "configs/cirr_context_cir_cl_cc_min_np_paper.yaml": {
-            "experiment_name": "cirr_vitb32_cl_cc_min_np_paper",
-            "lambda_cont": 1.0,
-            "lambda_cc": 0.08,
-            "backend": "stanza",
-            "extractor": "constituency_minimal_np",
-            "clean_only": False,
-        },
-        "configs/cirr_context_cir_cl_cc_min_np_clean.yaml": {
-            "experiment_name": "cirr_vitb32_cl_cc_min_np_clean",
+            "experiment_name": "cirr_vitb32_cl_cc_best",
             "lambda_cont": 1.0,
             "lambda_cc": 0.08,
             "backend": "stanza",

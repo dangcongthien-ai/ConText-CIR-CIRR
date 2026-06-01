@@ -38,6 +38,28 @@ def test_extract_edit_actions_keeps_substantive_make_object():
     assert action["attribute"] == "darker"
 
 
+def test_extract_edit_actions_covers_common_cirr_verbs():
+    examples = {
+        "Increase the number of bottles to 10": ("change", "the number of bottles", "10"),
+        "Tilt the dog's head.": ("turn", "the dog's head", None),
+        "Shows four zebras in grasslands.": ("show", "four zebras", None),
+        "Give the dog two red casts on its forelegs": ("add", "the dog", "two red casts on its forelegs"),
+        "there was a white cup - now a red cup": ("change", "a white cup", "a red cup"),
+    }
+    for caption, (action_name, obj, target) in examples.items():
+        action = extract_edit_actions(caption)[0]
+        assert action["action"] == action_name
+        assert action["object"] == obj
+        assert action["target"] == target
+
+
+def test_extract_edit_actions_state_caption_fallback():
+    action = extract_edit_actions("Dog is barking, nothing blocking his mouth")[0]
+    assert action["action"] == "state"
+    assert action["object"] == "dog"
+    assert action["attribute"] == "barking, nothing blocking his mouth"
+
+
 def test_select_clean_phrase_texts_filters_noisy_supervision():
     phrases = ["the needle", "in the hand", "its", "show three bottles"]
     records = [
