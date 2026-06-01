@@ -1,4 +1,4 @@
-# CIR_Pipeline
+# Context-CIR-CIRR
 
 Pipeline Composed Image Retrieval cho CIRR với backbone `openai/clip-vit-base-patch32`.
 
