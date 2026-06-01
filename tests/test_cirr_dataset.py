@@ -10,6 +10,7 @@ pytest.importorskip("torch")
 
 from cir_pipeline.config import AppConfig, DataConfig
 from cir_pipeline.data.cirr_dataset import CIRRDataset
+from cir_pipeline.text.noun_phrase_parser import CaptionParseResult, PhraseRecord
 
 
 def _write_json(path: Path, data) -> None:
@@ -120,3 +121,36 @@ def test_test1_empty_caption_does_not_crash(tmp_path):
     sample = dataset[0]
     assert sample["caption"] == ""
     assert sample["target_image"] is None
+
+
+def test_dataset_includes_parser_metadata(tmp_path):
+    cfg = _tiny_cfg(tmp_path)
+
+    class StubParser:
+        def analyze(self, caption: str) -> CaptionParseResult:
+            return CaptionParseResult(
+                noun_phrases=["red square"],
+                phrase_records=[PhraseRecord(text="red square", confidence=0.95, extractor="test")],
+                edit_actions=[
+                    {
+                        "action": "make",
+                        "object": "the red square",
+                        "attribute": "darker",
+                        "target": None,
+                        "location": None,
+                        "raw_clause": caption,
+                        "confidence": 0.9,
+                    }
+                ],
+                parser_warnings=["used_test_parser"],
+                phrase_extractor="test",
+                normalized_caption=caption,
+            )
+
+    dataset = CIRRDataset(cfg.data, "train", "relative", transform=None, noun_phrase_parser=StubParser())
+    sample = dataset[0]
+    assert sample["noun_phrases"] == ["red square"]
+    assert sample["phrase_records"][0]["text"] == "red square"
+    assert sample["edit_actions"][0]["action"] == "make"
+    assert sample["parser_warnings"] == ["used_test_parser"]
+    assert sample["phrase_extractor"] == "test"

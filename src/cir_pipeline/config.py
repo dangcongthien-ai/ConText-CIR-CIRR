@@ -58,6 +58,8 @@ class LossConfig:
     max_noun_phrases: int = 10
     use_query_image_negative: bool = True
     query_negative_weight: float = 1.0
+    text_cc_clean_only: bool = False
+    text_cc_clean_min_confidence: float = 0.7
 
 
 @dataclass
@@ -81,6 +83,8 @@ class TrainConfig:
     save_top_k: int = 1
     monitor: str = "val/recall@10"
     monitor_mode: str = "max"
+    log_cc_grad_norm: bool = False
+    cc_grad_norm_interval: int = 0
 
 
 @dataclass
@@ -173,8 +177,8 @@ def _validate_data_config(cfg: DataConfig) -> None:
         "data.noun_phrase_backend must be one of: auto, stanza, nltk, regex, none.",
     )
     _require(
-        cfg.noun_phrase_extractor in {"constituency", "dependency"},
-        "data.noun_phrase_extractor must be one of: constituency, dependency.",
+        cfg.noun_phrase_extractor in {"constituency", "dependency", "constituency_minimal_np"},
+        "data.noun_phrase_extractor must be one of: constituency, dependency, constituency_minimal_np.",
     )
     _require(
         cfg.stanza_download_method in {"none", "reuse_resources", "download_resources"},
@@ -188,6 +192,7 @@ def _validate_loss_config(cfg: LossConfig) -> None:
     _require(cfg.lambda_cc >= 0, "loss.lambda_cc must be >= 0.")
     _require(cfg.lambda_cont > 0 or cfg.lambda_cc > 0, "At least one loss weight must be > 0.")
     _require(cfg.query_negative_weight >= 0, "loss.query_negative_weight must be >= 0.")
+    _require(0 <= cfg.text_cc_clean_min_confidence <= 1, "loss.text_cc_clean_min_confidence must be within [0, 1].")
 
 
 def _validate_model_config(cfg: ModelConfig) -> None:
@@ -211,6 +216,7 @@ def _validate_train_config(cfg: TrainConfig) -> None:
     _require(cfg.accumulate_grad_batches >= 1, "train.accumulate_grad_batches must be >= 1.")
     _require(cfg.early_stopping_patience >= 0, "train.early_stopping_patience must be >= 0.")
     _require(cfg.early_stopping_min_delta >= 0, "train.early_stopping_min_delta must be >= 0.")
+    _require(cfg.cc_grad_norm_interval >= 0, "train.cc_grad_norm_interval must be >= 0.")
 
 
 def _validate_faiss_config(cfg: FaissConfig) -> None:
