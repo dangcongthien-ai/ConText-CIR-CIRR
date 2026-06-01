@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from cir_pipeline.config import AppConfig, load_config
 from cir_pipeline.data.cirr_dataset import CIRRDataset
+from cir_pipeline.utils.serve import resolve_server_urls
 
 
 @dataclass
@@ -31,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", default="configs/cirr_context_cir_cl_cc.yaml")
     parser.add_argument("--splits", nargs="+", choices=["train", "val", "test1"], default=["train", "val", "test1"])
     parser.add_argument("--limit", type=int, default=300)
-    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--host", default="0.0.0.0", help="Bind host. Use 0.0.0.0 to open the UI to other machines.")
     parser.add_argument("--port", type=int, default=8002)
     return parser.parse_args()
 
@@ -604,7 +605,12 @@ def create_app(config_path: str | Path, splits: list[str], limit: int) -> FastAP
 def main() -> None:
     args = parse_args()
     app = create_app(args.config, args.splits, args.limit)
-    print(f"Dataset UI: http://{args.host}:{args.port}")
+    urls = resolve_server_urls(args.host, args.port)
+    print(f"Dataset UI (local): {urls.local_url}")
+    if urls.lan_url:
+        print(f"Dataset UI (LAN):   {urls.lan_url}")
+    elif args.host not in {"127.0.0.1", "localhost"}:
+        print(f"Dataset UI (bind):  {urls.bind_url}")
     uvicorn.run(app, host=args.host, port=args.port)
 
 

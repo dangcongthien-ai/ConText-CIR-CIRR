@@ -23,6 +23,7 @@ from cir_pipeline.config import AppConfig, load_config
 from cir_pipeline.engine.train_module import load_cir_module_from_checkpoint
 from cir_pipeline.retrieval.faiss_index import FaissIndex, load_mapping
 from cir_pipeline.retrieval.search import encode_query_image_text, search_loaded_index
+from cir_pipeline.utils.serve import resolve_server_urls
 
 
 @dataclass
@@ -61,7 +62,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--index", default=None)
     parser.add_argument("--mapping", default=None)
-    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--host", default="0.0.0.0", help="Bind host. Use 0.0.0.0 to open the demo to other machines.")
     parser.add_argument("--port", type=int, default=8000)
     return parser.parse_args()
 
@@ -950,7 +951,12 @@ def main() -> None:
         split=args.split,
         splits=args.splits,
     )
-    print(f"Demo URL: http://{args.host}:{args.port}")
+    urls = resolve_server_urls(args.host, args.port)
+    print(f"Demo URL (local): {urls.local_url}")
+    if urls.lan_url:
+        print(f"Demo URL (LAN):   {urls.lan_url}")
+    elif args.host not in {"127.0.0.1", "localhost"}:
+        print(f"Demo URL (bind):  {urls.bind_url}")
     uvicorn.run(app, host=args.host, port=args.port)
 
 

@@ -22,12 +22,10 @@ Không chạy `CC-only` nữa, vì Text-CC một mình không học retrieval ta
 | Dataset viewer | `8002` | Xem pair, caption, target |
 | Retrieval demo `CL+CC` | `8003` | Dùng khi cần mở song song với `CL-only` |
 
-Nếu chỉ chạy một app, có thể bỏ `--port` để dùng default của script. Nếu chạy song song nhiều app, nên bám đúng bảng trên.
-
 ## 1. Chuẩn Bị
 
 ```powershell
-cd D:\1_Documents\Nam_3_HK2\Advanced_Computer_Vision\vscode\CIR_Pipeline
+cd D:\1_Documents\Nam_3_HK2\Advanced_Computer_Vision\vscode\ConText-CIR-CIRR
 conda activate AI
 pip install -r requirements.txt
 ```
@@ -84,7 +82,8 @@ python scripts/dataset_app.py --config configs/cirr_context_cir_cl_cc.yaml
 Mở:
 
 ```text
-http://127.0.0.1:8002
+Local: http://127.0.0.1:8002
+LAN:   http://<your-lan-ip>:8002
 ```
 
 Nếu muốn list nhiều sample hơn:
@@ -233,8 +232,10 @@ python scripts/retrieve_app.py --config configs/cirr_context_cir_cl_cc.yaml --ch
 Mở lần lượt:
 
 ```text
-CL-only: http://127.0.0.1:8000
-CL+CC:  http://127.0.0.1:8003
+CL-only local: http://127.0.0.1:8000
+CL-only LAN:   http://<your-lan-ip>:8000
+CL+CC local:   http://127.0.0.1:8003
+CL+CC LAN:     http://<your-lan-ip>:8003
 ```
 
 Nếu chỉ muốn truyền một FAISS index cụ thể:
@@ -261,7 +262,8 @@ python scripts/generate_loss_heatmaps.py --config configs/cirr_context_cir_cl_cc
 Mở:
 
 ```text
-http://127.0.0.1:8001
+Local: http://127.0.0.1:8001
+LAN:   http://<your-lan-ip>:8001
 ```
 
 Mặc định UI tìm checkpoint:
