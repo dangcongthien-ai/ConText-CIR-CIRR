@@ -1,4 +1,4 @@
-# CIR_Pipeline
+# Context-CIR-CIRR
 
 Pipeline Composed Image Retrieval cho CIRR với backbone `openai/clip-vit-base-patch32`.
 
@@ -11,10 +11,21 @@ Hiện chỉ giữ 2 hướng chạy cần so sánh:
 
 Không chạy `CC-only` nữa, vì Text-CC một mình không học retrieval target. Text-CC chỉ nên xem là regularizer để so `CL-only` với `CL+CC`.
 
+## Port Map
+
+Để tránh đụng port khi mở nhiều UI cùng lúc, dùng cố định:
+
+| UI | Port | Ghi chú |
+|---|---|---|
+| Retrieval demo `CL-only` | `8000` | App retrieval đầu tiên |
+| Heatmap UI | `8001` | So `CL-only` và `CL+CC` |
+| Dataset viewer | `8002` | Xem pair, caption, target |
+| Retrieval demo `CL+CC` | `8003` | Dùng khi cần mở song song với `CL-only` |
+
 ## 1. Chuẩn Bị
 
 ```powershell
-cd D:\1_Documents\Nam_3_HK2\Advanced_Computer_Vision\vscode\CIR_Pipeline
+cd D:\1_Documents\Nam_3_HK2\Advanced_Computer_Vision\vscode\ConText-CIR-CIRR
 conda activate AI
 pip install -r requirements.txt
 ```
@@ -71,7 +82,8 @@ python scripts/dataset_app.py --config configs/cirr_context_cir_cl_cc.yaml
 Mở:
 
 ```text
-http://127.0.0.1:8002
+Local: http://127.0.0.1:8002
+LAN:   http://<your-lan-ip>:8002
 ```
 
 Nếu muốn list nhiều sample hơn:
@@ -214,19 +226,22 @@ python scripts/retrieve_app.py --config configs/cirr_context_cir_cl.yaml --check
 Chạy demo CL+CC:
 
 ```powershell
-python scripts/retrieve_app.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc/cirr_vitb32_cl_cc-best.ckpt --splits val test1 --port 8000
+python scripts/retrieve_app.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc/cirr_vitb32_cl_cc-best.ckpt --splits val test1 --port 8003
 ```
 
-Mở:
+Mở lần lượt:
 
 ```text
-http://127.0.0.1:8000
+CL-only local: http://127.0.0.1:8000
+CL-only LAN:   http://<your-lan-ip>:8000
+CL+CC local:   http://127.0.0.1:8003
+CL+CC LAN:     http://<your-lan-ip>:8003
 ```
 
 Nếu chỉ muốn truyền một FAISS index cụ thể:
 
 ```powershell
-python scripts/retrieve_app.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc/cirr_vitb32_cl_cc-best.ckpt --split val --index outputs/faiss/cirr_vitb32_cl_cc/cirr_val/index.faiss --mapping outputs/faiss/cirr_vitb32_cl_cc/cirr_val/mapping.json
+python scripts/retrieve_app.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc/cirr_vitb32_cl_cc-best.ckpt --split val --index outputs/faiss/cirr_vitb32_cl_cc/cirr_val/index.faiss --mapping outputs/faiss/cirr_vitb32_cl_cc/cirr_val/mapping.json --port 8003
 ```
 
 ## 8. Heatmap UI
@@ -247,7 +262,8 @@ python scripts/generate_loss_heatmaps.py --config configs/cirr_context_cir_cl_cc
 Mở:
 
 ```text
-http://127.0.0.1:8001
+Local: http://127.0.0.1:8001
+LAN:   http://<your-lan-ip>:8001
 ```
 
 Mặc định UI tìm checkpoint:
@@ -348,9 +364,10 @@ python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl.yaml --
 python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc/cirr_vitb32_cl_cc-best.ckpt --split val
 python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc/cirr_vitb32_cl_cc-best.ckpt --split test1
 
-python scripts/dataset_app.py --config configs/cirr_context_cir_cl_cc.yaml --port 8002
+python scripts/retrieve_app.py --config configs/cirr_context_cir_cl.yaml --checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --splits val test1 --port 8000
 python scripts/generate_loss_heatmaps.py --config configs/cirr_context_cir_cl_cc.yaml --split val --port 8001
-python scripts/retrieve_app.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc/cirr_vitb32_cl_cc-best.ckpt --splits val test1 --port 8000
+python scripts/dataset_app.py --config configs/cirr_context_cir_cl_cc.yaml --port 8002
+python scripts/retrieve_app.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc/cirr_vitb32_cl_cc-best.ckpt --splits val test1 --port 8003
 ```
 
 ## 12. File Quan Trọng

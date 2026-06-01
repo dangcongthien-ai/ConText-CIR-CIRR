@@ -28,6 +28,7 @@ from cir_pipeline.models.losses import text_concept_consistency_loss
 from cir_pipeline.text.noun_phrase_parser import NounPhraseParser
 from cir_pipeline.text.token_alignment import align_noun_phrases, align_single_phrase
 from cir_pipeline.utils.io import ensure_dir, write_json
+from cir_pipeline.utils.serve import resolve_server_urls
 
 
 MODEL_VARIANTS = {
@@ -86,7 +87,7 @@ def parse_args() -> argparse.Namespace:
         help="Checkpoint for the CL+CC model slot.",
     )
     parser.add_argument("--limit", type=int, default=300, help="Number of samples shown in the selector.")
-    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--host", default="0.0.0.0", help="Bind host. Use 0.0.0.0 to open the UI to other machines.")
     parser.add_argument("--port", type=int, default=8001)
     return parser.parse_args()
 
@@ -257,7 +258,8 @@ def _page(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CIRR Loss Heatmaps</title>
+  <title>ConText-CIRR | Loss Heatmaps</title>
+  <meta name="description" content="Interactive heatmap viewer for contrastive and CL+CC phrase attention analysis in the ConText-CIRR workspace.">
   <style>
     :root {{
       --bg: #f6f7f9;
@@ -289,6 +291,7 @@ def _page(
       justify-content: space-between;
       gap: 16px;
     }}
+    .brand {{ display: grid; gap: 4px; }}
     h1 {{
       margin: 0;
       font-size: 18px;
@@ -515,7 +518,10 @@ def _page(
 <body>
   <header>
     <div class="bar">
-      <h1>CIRR Loss Heatmaps</h1>
+      <div class="brand">
+        <div class="sample-id">ConText-CIRR Workspace</div>
+        <h1>Loss Heatmaps</h1>
+      </div>
       <div class="muted">split={html.escape(state.split)} &middot; device={state.device.type} &middot; samples={len(state.samples_by_pair_id)}</div>
     </div>
   </header>
@@ -879,7 +885,12 @@ def main() -> None:
         "cl_cc": args.cl_cc_checkpoint,
     }
     app = create_app(args.config, args.split, checkpoints, args.limit)
-    print(f"Heatmap UI: http://{args.host}:{args.port}")
+    urls = resolve_server_urls(args.host, args.port)
+    print(f"Heatmap UI (local): {urls.local_url}")
+    if urls.lan_url:
+        print(f"Heatmap UI (LAN):   {urls.lan_url}")
+    elif args.host not in {"127.0.0.1", "localhost"}:
+        print(f"Heatmap UI (bind):  {urls.bind_url}")
     uvicorn.run(app, host=args.host, port=args.port)
 
 
