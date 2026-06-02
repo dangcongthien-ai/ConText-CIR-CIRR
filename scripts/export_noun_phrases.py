@@ -26,7 +26,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", default="configs/cirr_context_cir_cl_cc.yaml")
     parser.add_argument("--split", default="all", choices=[*SPLITS, "all"])
     parser.add_argument("--backend", default="both", choices=["stanza", "regex", "both"])
-    parser.add_argument("--output_dir", default="outputs/noun_phrases")
+    parser.add_argument("--output_dir", default="noun_phrases")
+    parser.add_argument(
+        "--cache_dir",
+        default=None,
+        help="Optional canonical cache directory used later by training. Defaults to data.noun_phrase_cache_dir.",
+    )
     parser.add_argument("--max_phrases", type=int, default=None)
     parser.add_argument(
         "--noun_phrase_extractor",
@@ -213,6 +218,7 @@ def _sample_row(
         "target_name": sample.get("target_name"),
         "caption": sample.get("caption"),
         "noun_phrases": analysis.noun_phrases,
+        "phrase_records": [record.to_dict() for record in analysis.phrase_records],
         "num_noun_phrases": len(analysis.noun_phrases),
         "img_set_id": sample.get("img_set_id"),
         "img_set": sample.get("img_set", []),
@@ -245,6 +251,7 @@ def _export_backend_split(
     split: str,
     backend: str,
     output_dir: Path,
+    cache_dir: Path,
     max_phrases: int,
     limit: int | None,
     allow_fallback: bool,
@@ -269,6 +276,7 @@ def _export_backend_split(
         "dataset": cfg.data.dataset,
         "split": split,
         "backend": backend,
+        "noun_phrase_extractor": noun_phrase_extractor or getattr(cfg.data, "noun_phrase_extractor", "constituency"),
         "allow_fallback": allow_fallback,
         "max_phrases": max_phrases,
         "summary": _summary(rows),
@@ -276,10 +284,15 @@ def _export_backend_split(
     }
     output_path = output_dir / f"cirr_{split}_{backend}.json"
     write_json(payload, output_path)
+    cache_path = cache_dir / f"cirr_{split}_{backend}.json"
+    if cache_path != output_path:
+        write_json(payload, cache_path)
     if per_backend_dirs:
         legacy_dir = ensure_dir(Path(cfg.project.output_dir) / backend)
         write_json(payload, legacy_dir / f"{backend}_output_{split}.json")
     print(f"{backend} {split}: {output_path}")
+    if cache_path != output_path:
+        print(f"{backend} {split} cache: {cache_path}")
     return output_path
 
 
@@ -333,6 +346,7 @@ def main() -> None:
     cfg = load_config(args.config)
     max_phrases = int(args.max_phrases or max(1, cfg.loss.max_noun_phrases))
     output_dir = ensure_dir(args.output_dir)
+    cache_dir = ensure_dir(args.cache_dir or cfg.data.noun_phrase_cache_dir or args.output_dir)
     backends = _selected_backends(args.backend)
     if args.prepare_stanza and "stanza" in backends:
         prepare_stanza_resources(cfg.data.stanza_resources_dir)
@@ -345,6 +359,7 @@ def main() -> None:
                 split=split,
                 backend=backend,
                 output_dir=output_dir,
+                cache_dir=cache_dir,
                 max_phrases=max_phrases,
                 limit=args.limit,
                 allow_fallback=args.allow_fallback,

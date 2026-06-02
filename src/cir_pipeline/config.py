@@ -27,6 +27,8 @@ class DataConfig:
     use_extended_captions: bool = False
     skip_empty_captions: bool = True
     noun_phrase_backend: str = "regex"
+    noun_phrase_cache_dir: Optional[str] = "noun_phrases"
+    use_exported_noun_phrases: bool = True
     stanza_resources_dir: Optional[str] = None
     stanza_download_method: str = "reuse_resources"
     num_workers: int = 8

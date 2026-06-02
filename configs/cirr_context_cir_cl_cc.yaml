@@ -13,6 +13,8 @@ data:
   use_extended_captions: false
   skip_empty_captions: true
   noun_phrase_backend: "stanza"
+  noun_phrase_cache_dir: "noun_phrases"
+  use_exported_noun_phrases: true
   noun_phrase_extractor: "constituency_minimal_np"
   stanza_resources_dir: ".stanza_resources"
   stanza_download_method: "none"

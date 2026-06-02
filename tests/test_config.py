@@ -10,6 +10,8 @@ def test_default_cl_cc_config_loads_as_best_candidate():
     data = config_to_dict(cfg)
     assert data["project"]["name"] == "CIR_Pipeline"
     assert data["data"]["metadata_root"] == "CIRR/cirr"
+    assert data["data"]["noun_phrase_cache_dir"] == "noun_phrases"
+    assert data["data"]["use_exported_noun_phrases"] is True
     assert data["data"]["stanza_resources_dir"] == ".stanza_resources"
     assert data["data"]["stanza_download_method"] == "none"
     assert data["data"]["noun_phrase_backend"] == "stanza"
@@ -63,6 +65,8 @@ def test_only_two_canonical_training_configs_remain():
         assert math.isclose(data["loss"]["lambda_cc"], expected["lambda_cc"])
         assert data["data"]["noun_phrase_backend"] == expected["backend"]
         assert data["data"]["noun_phrase_extractor"] == expected["extractor"]
+        assert data["data"]["noun_phrase_cache_dir"] == "noun_phrases"
+        assert data["data"]["use_exported_noun_phrases"] is True
         assert data["loss"]["text_cc_clean_only"] is expected["clean_only"]
         assert math.isclose(data["loss"]["text_cc_clean_min_confidence"], 0.7)
         assert data["train"]["save_top_k"] == 1
