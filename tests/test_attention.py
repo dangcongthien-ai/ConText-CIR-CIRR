@@ -6,7 +6,7 @@ pytest.importorskip("torch")
 
 import torch
 
-from cir_pipeline.models.attention import CrossAttentionFusion
+from cir_pipeline.models.attention import CrossAttentionFusion, TextToImageAttentionFusion
 
 
 def test_cross_attention_uses_image_queries_and_text_keys():
@@ -20,3 +20,15 @@ def test_cross_attention_uses_image_queries_and_text_keys():
     assert fused.shape == (2, 5, 8)
     assert len(attention_maps) == 1
     assert attention_maps[0].shape == (2, 2, 5, 7)
+
+
+def test_text_to_image_attention_uses_text_queries_and_image_keys():
+    fusion = TextToImageAttentionFusion(image_dim=8, text_dim=6, num_layers=1, num_heads=2)
+    image_tokens = torch.randn(2, 5, 8)
+    text_tokens = torch.randn(2, 7, 6)
+
+    fused, attention_maps = fusion(text_tokens, image_tokens)
+
+    assert fused.shape == (2, 7, 6)
+    assert len(attention_maps) == 1
+    assert attention_maps[0].shape == (2, 2, 7, 5)

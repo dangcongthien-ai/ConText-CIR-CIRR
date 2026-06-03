@@ -1,4 +1,4 @@
-﻿"""Configuration loading and validation."""
+"""Configuration loading and validation."""
 
 from __future__ import annotations
 
@@ -65,6 +65,7 @@ class LossConfig:
     query_negative_weight: float = 1.0
     text_cc_clean_only: bool = False
     text_cc_clean_min_confidence: float = 0.7
+    text_cc_attention_direction: str = "text_to_image"
 
 
 @dataclass
@@ -203,6 +204,10 @@ def _validate_loss_config(cfg: LossConfig) -> None:
     _require(cfg.lambda_cont > 0 or cfg.lambda_cc > 0, "At least one loss weight must be > 0.")
     _require(cfg.query_negative_weight >= 0, "loss.query_negative_weight must be >= 0.")
     _require(0 <= cfg.text_cc_clean_min_confidence <= 1, "loss.text_cc_clean_min_confidence must be within [0, 1].")
+    _require(
+        cfg.text_cc_attention_direction in {"image_to_text", "text_to_image"},
+        "loss.text_cc_attention_direction must be one of: image_to_text, text_to_image.",
+    )
 
 
 def _validate_model_config(cfg: ModelConfig) -> None:

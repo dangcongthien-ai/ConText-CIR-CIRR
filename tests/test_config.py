@@ -28,6 +28,7 @@ def test_default_cl_cc_config_loads_as_best_candidate():
     assert math.isclose(data["loss"]["query_negative_weight"], 0.1)
     assert data["loss"]["text_cc_clean_only"] is True
     assert math.isclose(data["loss"]["text_cc_clean_min_confidence"], 0.7)
+    assert data["loss"]["text_cc_attention_direction"] == "text_to_image"
     assert math.isclose(data["train"]["encoder_learning_rate"], 2.0e-6)
     assert math.isclose(data["train"]["encoder_weight_decay"], 5.0e-3)
     assert data["train"]["batch_size"] == 64
@@ -69,6 +70,7 @@ def test_only_two_canonical_training_configs_remain():
         assert data["data"]["use_exported_noun_phrases"] is True
         assert data["loss"]["text_cc_clean_only"] is expected["clean_only"]
         assert math.isclose(data["loss"]["text_cc_clean_min_confidence"], 0.7)
+        assert data["loss"]["text_cc_attention_direction"] == "text_to_image"
         assert data["train"]["save_top_k"] == 1
         assert data["train"]["log_cc_grad_norm"] is False
         assert data["train"]["cc_grad_norm_interval"] == 0

@@ -7,7 +7,7 @@ from torch import nn
 
 
 class CrossAttentionBlock(nn.Module):
-    """Image tokens attend to text tokens, matching the ConText-CIR reference."""
+    """Image tokens attend to text tokens, matching the retrieval branch."""
 
     def __init__(self, image_dim: int, text_dim: int, num_heads: int, dropout: float = 0.0) -> None:
         super().__init__()
@@ -54,8 +54,51 @@ class CrossAttentionBlock(nn.Module):
         return image_tokens, weights
 
 
+class TextToImageAttentionBlock(nn.Module):
+    """Text tokens attend to image tokens, matching the CC-style concept grounding branch."""
+
+    def __init__(self, image_dim: int, text_dim: int, num_heads: int, dropout: float = 0.0) -> None:
+        super().__init__()
+        self.image_norm = nn.LayerNorm(image_dim)
+        self.text_norm = nn.LayerNorm(text_dim)
+        self.attn = nn.MultiheadAttention(
+            embed_dim=text_dim,
+            num_heads=num_heads,
+            dropout=dropout,
+            batch_first=True,
+            kdim=image_dim,
+            vdim=image_dim,
+        )
+        self.ffn = nn.Sequential(
+            nn.LayerNorm(text_dim),
+            nn.Linear(text_dim, text_dim * 4),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(text_dim * 4, text_dim),
+            nn.Dropout(dropout),
+        )
+
+    def forward(
+        self,
+        text_tokens: torch.Tensor,
+        image_tokens: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        query = self.text_norm(text_tokens)
+        key_value = self.image_norm(image_tokens)
+        attended, weights = self.attn(
+            query=query,
+            key=key_value,
+            value=key_value,
+            need_weights=True,
+            average_attn_weights=False,
+        )
+        text_tokens = text_tokens + attended
+        text_tokens = text_tokens + self.ffn(text_tokens)
+        return text_tokens, weights
+
+
 class CrossAttentionFusion(nn.Module):
-    """Stack cross-attention layers and expose per-layer attention maps."""
+    """Stack retrieval cross-attention layers and expose per-layer attention maps."""
 
     def __init__(
         self,
@@ -81,6 +124,34 @@ class CrossAttentionFusion(nn.Module):
             image_tokens, weights = layer(image_tokens, text_tokens, text_mask)
             attention_maps.append(weights)
         return image_tokens, attention_maps
+
+
+class TextToImageAttentionFusion(nn.Module):
+    """Stack concept-grounding text-to-image attention layers for Text-CC."""
+
+    def __init__(
+        self,
+        image_dim: int,
+        text_dim: int,
+        num_layers: int,
+        num_heads: int,
+        dropout: float = 0.0,
+    ) -> None:
+        super().__init__()
+        self.layers = nn.ModuleList(
+            [TextToImageAttentionBlock(image_dim, text_dim, num_heads, dropout) for _ in range(num_layers)]
+        )
+
+    def forward(
+        self,
+        text_tokens: torch.Tensor,
+        image_tokens: torch.Tensor,
+    ) -> tuple[torch.Tensor, list[torch.Tensor]]:
+        attention_maps: list[torch.Tensor] = []
+        for layer in self.layers:
+            text_tokens, weights = layer(text_tokens, image_tokens)
+            attention_maps.append(weights)
+        return text_tokens, attention_maps
 
 
 class AttentionPooling(nn.Module):

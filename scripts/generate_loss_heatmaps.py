@@ -632,11 +632,20 @@ def _average_attribution(attention_maps: list[torch.Tensor]) -> torch.Tensor:
     return score
 
 
-def _phrase_heat_values(score: torch.Tensor, token_indices: list[int]) -> torch.Tensor:
-    valid = [idx for idx in token_indices if 0 <= idx < score.shape[-1]]
+def _phrase_heat_values(
+    score: torch.Tensor,
+    token_indices: list[int],
+    attention_layout: str,
+) -> torch.Tensor:
+    if attention_layout == "image_to_text":
+        valid = [idx for idx in token_indices if 0 <= idx < score.shape[-1]]
+        if not valid:
+            return torch.zeros(score.shape[0], device=score.device)
+        return score[:, valid].mean(dim=-1)
+    valid = [idx for idx in token_indices if 0 <= idx < score.shape[0]]
     if not valid:
-        return torch.zeros(score.shape[0], device=score.device)
-    return score[:, valid].mean(dim=-1)
+        return torch.zeros(score.shape[-1], device=score.device)
+    return score[valid, :].mean(dim=0)
 
 
 def _retain_attention_grads(attention_maps: list[torch.Tensor]) -> None:
@@ -647,13 +656,14 @@ def _retain_attention_grads(attention_maps: list[torch.Tensor]) -> None:
 
 def _compute_loss_for_variant(
     slot: ModelSlot,
-    query_out: dict[str, Any],
+    retrieval_query_out: dict[str, Any],
+    cc_query_out: dict[str, Any],
     iso_out: dict[str, Any] | None,
     target_tensor: torch.Tensor | None,
     full_token_indices: list[list[int]],
     iso_token_indices: list[list[int]],
 ) -> torch.Tensor:
-    embedding = query_out["embeddings"]
+    embedding = retrieval_query_out["embeddings"]
     loss = embedding.sum() * 0.0
     if slot.loss_kind in {"contrastive", "combined"} and target_tensor is not None:
         target_embedding = slot.model.encode_gallery(target_tensor)
@@ -661,12 +671,13 @@ def _compute_loss_for_variant(
     if slot.loss_kind in {"cc", "combined"} and iso_out is not None and full_token_indices:
         sample_indices = [0 for _ in full_token_indices]
         cc_loss = text_concept_consistency_loss(
-            query_out["attention_maps"],
+            cc_query_out["attention_maps"],
             iso_out["attention_maps"],
             full_token_indices,
             iso_token_indices,
             sample_indices,
-            epsilon=0.0,
+            0.0,
+            str(cc_query_out.get("attention_layout", "image_to_text")),
         )
         lambda_cc = slot.model.cfg.dropout * 0.0 + 1.0
         if slot.loss_kind == "combined":
@@ -719,20 +730,31 @@ def _generate_heatmaps(
         if target_path is not None
         else None
     )
+    use_cc_branch = slot.loss_kind in {"cc", "combined"}
     for parameter in model.parameters():
         parameter.grad = None
     with torch.enable_grad():
-        query_out = model.forward_with_attention(image_tensor, [str(sample["caption"])])
-        _retain_attention_grads(query_out["attention_maps"])
+        retrieval_query_out = model.forward_with_attention(image_tensor, [str(sample["caption"])])
+        cc_query_out = (
+            model.forward_text_cc_attention(image_tensor, [str(sample["caption"])])
+            if use_cc_branch
+            else retrieval_query_out
+        )
+        _retain_attention_grads(cc_query_out["attention_maps"])
         iso_out = None
         if valid_rows:
             iso_images = image_tensor.repeat(len(valid_rows), 1, 1, 1)
             iso_texts = [row[0] for row in valid_rows]
-            iso_out = model.forward_with_attention(iso_images, iso_texts)
+            iso_out = (
+                model.forward_text_cc_attention(iso_images, iso_texts)
+                if use_cc_branch
+                else model.forward_with_attention(iso_images, iso_texts)
+            )
             _retain_attention_grads(iso_out["attention_maps"])
         loss = _compute_loss_for_variant(
             slot,
-            query_out,
+            retrieval_query_out,
+            cc_query_out,
             iso_out,
             target_tensor,
             [row[1] for row in valid_rows],
@@ -740,7 +762,8 @@ def _generate_heatmaps(
         )
         loss.backward()
 
-    full_score = _average_attribution(query_out["attention_maps"])[0]
+    attention_layout = str(cc_query_out.get("attention_layout", "image_to_text"))
+    full_score = _average_attribution(cc_query_out["attention_maps"])[0]
     iso_score = _average_attribution(iso_out["attention_maps"]) if iso_out is not None else None
     heatmaps = [
         {
@@ -751,7 +774,7 @@ def _generate_heatmaps(
     ]
     for idx, (phrase, full_idx, _iso_idx) in enumerate(valid_rows):
         full_path = out_dir / f"full_{idx:02d}.png"
-        _save_overlay(base, _phrase_heat_values(full_score, full_idx), full_path)
+        _save_overlay(base, _phrase_heat_values(full_score, full_idx, attention_layout), full_path)
         heatmaps.append(
             {
                 "title": f'full: "{phrase}"',
@@ -762,7 +785,7 @@ def _generate_heatmaps(
         )
         if iso_score is not None:
             iso_path = out_dir / f"isolated_{idx:02d}.png"
-            _save_overlay(base, _phrase_heat_values(iso_score[idx], _iso_idx), iso_path)
+            _save_overlay(base, _phrase_heat_values(iso_score[idx], _iso_idx, attention_layout), iso_path)
             heatmaps.append(
                 {
                     "title": f'isolated: "{phrase}"',
@@ -774,6 +797,7 @@ def _generate_heatmaps(
     return {
         "loss_value": float(loss.detach().cpu()),
         "heatmaps": heatmaps,
+        "attention_layout": attention_layout,
     }
 
 

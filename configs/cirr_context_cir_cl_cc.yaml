@@ -44,6 +44,7 @@ loss:
   query_negative_weight: 0.1
   text_cc_clean_only: true
   text_cc_clean_min_confidence: 0.7
+  text_cc_attention_direction: "text_to_image"
 
 train:
   batch_size: 64
