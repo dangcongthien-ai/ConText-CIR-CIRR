@@ -35,13 +35,25 @@ class ConTextCIR(nn.Module):
             dropout=cfg.dropout,
         )
         self.pooling = AttentionPooling(dim=image_dim, num_heads=cfg.num_heads, dropout=cfg.dropout)
-        output_dim = cfg.projection_dim or image_dim
-        self.projection = nn.Identity() if output_dim == image_dim else nn.Linear(image_dim, output_dim)
+        native_projection_dim = self.encoders.embedding_projection_dim
+        output_dim = cfg.projection_dim or (native_projection_dim if cfg.use_native_clip_projection else image_dim)
+        self.projection = self._build_projection(image_dim, output_dim, cfg.use_native_clip_projection)
         self.embedding_dim = output_dim
 
     @property
     def tokenizer(self):
         return self.encoders.tokenizer
+
+    def _build_projection(self, image_dim: int, output_dim: int, use_native_clip_projection: bool) -> nn.Module:
+        if output_dim == image_dim and not use_native_clip_projection:
+            return nn.Identity()
+        projection = nn.Linear(image_dim, output_dim, bias=False)
+        if use_native_clip_projection:
+            native_projection = self.encoders.visual_projection
+            if native_projection is not None and native_projection.weight.shape == projection.weight.shape:
+                with torch.no_grad():
+                    projection.weight.copy_(native_projection.weight)
+        return projection
 
     def forward_query(self, images: torch.Tensor, texts: list[str]) -> torch.Tensor:
         return self.forward_with_attention(images, texts)["embeddings"]

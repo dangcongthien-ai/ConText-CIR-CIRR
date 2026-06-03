@@ -73,3 +73,11 @@ def test_only_two_canonical_training_configs_remain():
         assert data["train"]["log_cc_grad_norm"] is False
         assert data["train"]["cc_grad_norm_interval"] == 0
         assert data["faiss"]["output_dir"].endswith(expected["experiment_name"])
+
+
+def test_experimental_clipmodel_config_enables_native_projection():
+    cfg = load_config("configs/cirr_context_cir_cl_clipmodel.yaml")
+    data = config_to_dict(cfg)
+    assert data["model"]["use_native_clip_projection"] is True
+    assert data["logger"]["experiment_name"] == "cirr_vitb32_cl_clipmodel"
+    assert data["faiss"]["output_dir"].endswith("cirr_vitb32_cl_clipmodel")

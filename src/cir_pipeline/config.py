@@ -43,13 +43,13 @@ class ModelConfig:
     num_heads: int = 8
     dropout: float = 0.0
     projection_dim: Optional[int] = None
+    use_native_clip_projection: bool = False
     normalize_embeddings: bool = True
     freeze_vision_encoder: bool = True
     freeze_text_encoder: bool = True
     trainable_vision_layers: int = 0
     trainable_text_layers: int = 0
     use_gradient_checkpointing: bool = False
-
 
 @dataclass
 class LossConfig:

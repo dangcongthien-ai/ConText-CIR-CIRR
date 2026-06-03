@@ -450,6 +450,13 @@ def _extract_state_dict(checkpoint: Any, checkpoint_path: str) -> dict[str, torc
     return state_dict
 
 
+_LEGACY_VISION_DOUBLE_PREFIX = "model.encoders.vision_model.vision_model."
+_LEGACY_VISION_SINGLE_PREFIX = "model.encoders.vision_model."
+_LEGACY_TEXT_DOUBLE_PREFIX = "model.encoders.text_model.text_model."
+_LEGACY_TEXT_SINGLE_PREFIX = "model.encoders.text_model."
+_CLIPMODEL_VISION_PREFIX = "model.encoders.clip_model.vision_model."
+_CLIPMODEL_TEXT_PREFIX = "model.encoders.clip_model.text_model."
+
 def _migrate_legacy_state_dict_keys(
     state_dict: dict[str, torch.Tensor],
     target_state_dict: dict[str, torch.Tensor] | None = None,
@@ -459,15 +466,29 @@ def _migrate_legacy_state_dict_keys(
         _replace_state_dict_prefixes(
             state_dict,
             {
-                "model.encoders.vision_model.vision_model.": "model.encoders.vision_model.",
-                "model.encoders.text_model.text_model.": "model.encoders.text_model.",
+                _LEGACY_VISION_DOUBLE_PREFIX: _LEGACY_VISION_SINGLE_PREFIX,
+                _LEGACY_TEXT_DOUBLE_PREFIX: _LEGACY_TEXT_SINGLE_PREFIX,
             },
         ),
         _replace_state_dict_prefixes(
             state_dict,
             {
-                "model.encoders.vision_model.": "model.encoders.vision_model.vision_model.",
-                "model.encoders.text_model.": "model.encoders.text_model.text_model.",
+                _LEGACY_VISION_SINGLE_PREFIX: _LEGACY_VISION_DOUBLE_PREFIX,
+                _LEGACY_TEXT_SINGLE_PREFIX: _LEGACY_TEXT_DOUBLE_PREFIX,
+            },
+        ),
+        _replace_state_dict_prefixes(
+            state_dict,
+            {
+                _LEGACY_VISION_DOUBLE_PREFIX: _CLIPMODEL_VISION_PREFIX,
+                _LEGACY_TEXT_DOUBLE_PREFIX: _CLIPMODEL_TEXT_PREFIX,
+            },
+        ),
+        _replace_state_dict_prefixes(
+            state_dict,
+            {
+                _LEGACY_VISION_SINGLE_PREFIX: _CLIPMODEL_VISION_PREFIX,
+                _LEGACY_TEXT_SINGLE_PREFIX: _CLIPMODEL_TEXT_PREFIX,
             },
         ),
     ]
