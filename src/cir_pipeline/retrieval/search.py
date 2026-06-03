@@ -1,4 +1,4 @@
-"""Query encoding and FAISS search helpers."""
+﻿"""Query encoding and FAISS search helpers."""
 
 from __future__ import annotations
 
@@ -16,15 +16,25 @@ def encode_query_image_text(
     query_image: str | Path,
     text: str,
     device,
+    transform=None,
+    *,
+    backbone: str | None = None,
+    transform_name: str = "clip",
+    target_pad_ratio: float = 1.25,
 ) -> np.ndarray:
     import torch
     from PIL import Image
 
     from cir_pipeline.data.transforms import build_clip_transform
 
-    transform = build_clip_transform(train=False)
+    resolved_transform = transform or build_clip_transform(
+        train=False,
+        backbone=backbone,
+        transform_name=transform_name,
+        target_pad_ratio=target_pad_ratio,
+    )
     image = Image.open(query_image).convert("RGB")
-    tensor = transform(image).unsqueeze(0).to(device)
+    tensor = resolved_transform(image).unsqueeze(0).to(device)
     with torch.no_grad():
         embedding = model.forward_query(tensor, [text]).detach().cpu().numpy().astype("float32")
     norm = np.linalg.norm(embedding, axis=1, keepdims=True).clip(min=1e-12)

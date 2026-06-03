@@ -81,3 +81,12 @@ def test_experimental_clipmodel_config_enables_native_projection():
     assert data["model"]["use_native_clip_projection"] is True
     assert data["logger"]["experiment_name"] == "cirr_vitb32_cl_clipmodel"
     assert data["faiss"]["output_dir"].endswith("cirr_vitb32_cl_clipmodel")
+
+
+def test_targetpad_config_loads_with_expected_transform_settings():
+    cfg = load_config("configs/cirr_context_cir_cl_targetpad.yaml")
+    data = config_to_dict(cfg)
+    assert data["data"]["image_transform"] == "targetpad"
+    assert math.isclose(data["data"]["target_pad_ratio"], 1.25)
+    assert data["logger"]["experiment_name"] == "cirr_vitb32_cl_targetpad"
+    assert data["faiss"]["output_dir"].endswith("cirr_vitb32_cl_targetpad")

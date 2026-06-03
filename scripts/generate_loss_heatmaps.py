@@ -706,7 +706,12 @@ def _generate_heatmaps(
     ]
     valid_rows = [(phrase, full_idx, iso_idx) for phrase, full_idx, iso_idx in valid_rows if iso_idx]
 
-    transform = build_clip_transform(train=False)
+    transform = build_clip_transform(
+        train=False,
+        backbone=state.cfg.model.backbone,
+        transform_name=getattr(state.cfg.data, "image_transform", "clip"),
+        target_pad_ratio=float(getattr(state.cfg.data, "target_pad_ratio", 1.25)),
+    )
     image_tensor = transform(Image.open(image_path).convert("RGB")).unsqueeze(0).to(state.device)
     target_tensor = (
         transform(Image.open(target_path).convert("RGB")).unsqueeze(0).to(state.device)

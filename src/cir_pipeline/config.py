@@ -1,4 +1,4 @@
-"""Configuration loading and validation."""
+﻿"""Configuration loading and validation."""
 
 from __future__ import annotations
 
@@ -33,6 +33,8 @@ class DataConfig:
     stanza_download_method: str = "reuse_resources"
     num_workers: int = 8
     noun_phrase_extractor: str = "constituency"
+    image_transform: str = "clip"
+    target_pad_ratio: float = 1.25
 
 
 @dataclass
@@ -50,6 +52,7 @@ class ModelConfig:
     trainable_vision_layers: int = 0
     trainable_text_layers: int = 0
     use_gradient_checkpointing: bool = False
+
 
 @dataclass
 class LossConfig:
@@ -186,6 +189,11 @@ def _validate_data_config(cfg: DataConfig) -> None:
         cfg.stanza_download_method in {"none", "reuse_resources", "download_resources"},
         "data.stanza_download_method must be one of: none, reuse_resources, download_resources.",
     )
+    _require(
+        cfg.image_transform in {"clip", "squarepad", "targetpad"},
+        "data.image_transform must be one of: clip, squarepad, targetpad.",
+    )
+    _require(cfg.target_pad_ratio > 0, "data.target_pad_ratio must be > 0.")
 
 
 def _validate_loss_config(cfg: LossConfig) -> None:

@@ -20,6 +20,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from cir_pipeline.config import AppConfig, load_config
+from cir_pipeline.data.transforms import build_clip_transform
 from cir_pipeline.engine.train_module import load_cir_module_from_checkpoint
 from cir_pipeline.retrieval.faiss_index import FaissIndex, load_mapping
 from cir_pipeline.retrieval.search import encode_query_image_text, search_loaded_index
@@ -43,10 +44,10 @@ class DemoState:
     upload_dir: Path
     device: torch.device
     model: Any
+    query_transform: Any
     index_sets: dict[str, IndexSet]
     index_errors: dict[str, str]
     lock: threading.Lock
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a FastAPI demo for CIR image + text retrieval.")
@@ -731,7 +732,7 @@ def _search(
         raise KeyError(f"FAISS gallery is not loaded for split: {gallery_split}")
     index_set = state.index_sets[gallery_split]
     with state.lock:
-        query_embedding = encode_query_image_text(state.model, image_path, text, state.device)
+        query_embedding = encode_query_image_text(state.model, image_path, text, state.device, transform=state.query_transform)
         results = search_loaded_index(
             index_set.faiss_index,
             index_set.mapping,
@@ -782,6 +783,12 @@ def _create_demo_state(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     module = load_cir_module_from_checkpoint(checkpoint, cfg=cfg, map_location=device)
     model = module.model.to(device).eval()
+    query_transform = build_clip_transform(
+        train=False,
+        backbone=cfg.model.backbone,
+        transform_name=getattr(cfg.data, "image_transform", "clip"),
+        target_pad_ratio=float(getattr(cfg.data, "target_pad_ratio", 1.25)),
+    )
     index_sets, index_errors = _load_index_sets(
         cfg,
         split=split,
@@ -801,6 +808,7 @@ def _create_demo_state(
         upload_dir=upload_dir,
         device=device,
         model=model,
+        query_transform=query_transform,
         index_sets=index_sets,
         index_errors=index_errors,
         lock=threading.Lock(),
