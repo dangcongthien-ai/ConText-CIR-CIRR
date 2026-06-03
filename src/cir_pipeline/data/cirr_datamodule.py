@@ -1,4 +1,4 @@
-﻿"""PyTorch Lightning DataModule for CIRR."""
+"""PyTorch Lightning DataModule for CIRR."""
 
 from __future__ import annotations
 
@@ -39,10 +39,11 @@ class CIRRDataModule(pl.LightningDataModule if pl else object):
 
     def _build_transform(self, train: bool) -> object:
         return build_clip_transform(
-            train=train,
-            backbone=self.cfg.model.backbone,
-            transform_name=getattr(self.cfg.data, "image_transform", "clip"),
-            target_pad_ratio=float(getattr(self.cfg.data, "target_pad_ratio", 1.25)),
+            None,
+            train,
+            self.cfg.model.backbone,
+            getattr(self.cfg.data, "image_transform", "clip"),
+            float(getattr(self.cfg.data, "target_pad_ratio", 1.25)),
         )
 
     def setup(self, stage: str | None = None) -> None:

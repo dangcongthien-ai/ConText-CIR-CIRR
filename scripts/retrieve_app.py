@@ -732,7 +732,7 @@ def _search(
         raise KeyError(f"FAISS gallery is not loaded for split: {gallery_split}")
     index_set = state.index_sets[gallery_split]
     with state.lock:
-        query_embedding = encode_query_image_text(state.model, image_path, text, state.device, transform=state.query_transform)
+        query_embedding = encode_query_image_text(state.model, image_path, text, state.device, state.query_transform)
         results = search_loaded_index(
             index_set.faiss_index,
             index_set.mapping,
@@ -784,10 +784,11 @@ def _create_demo_state(
     module = load_cir_module_from_checkpoint(checkpoint, cfg=cfg, map_location=device)
     model = module.model.to(device).eval()
     query_transform = build_clip_transform(
-        train=False,
-        backbone=cfg.model.backbone,
-        transform_name=getattr(cfg.data, "image_transform", "clip"),
-        target_pad_ratio=float(getattr(cfg.data, "target_pad_ratio", 1.25)),
+        None,
+        False,
+        cfg.model.backbone,
+        getattr(cfg.data, "image_transform", "clip"),
+        float(getattr(cfg.data, "target_pad_ratio", 1.25)),
     )
     index_sets, index_errors = _load_index_sets(
         cfg,

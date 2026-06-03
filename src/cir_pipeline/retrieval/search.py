@@ -1,4 +1,4 @@
-﻿"""Query encoding and FAISS search helpers."""
+"""Query encoding and FAISS search helpers."""
 
 from __future__ import annotations
 
@@ -28,10 +28,11 @@ def encode_query_image_text(
     from cir_pipeline.data.transforms import build_clip_transform
 
     resolved_transform = transform or build_clip_transform(
-        train=False,
-        backbone=backbone,
-        transform_name=transform_name,
-        target_pad_ratio=target_pad_ratio,
+        None,
+        False,
+        backbone,
+        transform_name,
+        target_pad_ratio,
     )
     image = Image.open(query_image).convert("RGB")
     tensor = resolved_transform(image).unsqueeze(0).to(device)
