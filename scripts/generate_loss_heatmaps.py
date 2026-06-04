@@ -34,12 +34,12 @@ from cir_pipeline.utils.serve import resolve_server_urls
 MODEL_VARIANTS = {
     "cl": {
         "label": "Contrastive loss",
-        "default_checkpoint": "checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt",
+        "default_checkpoint": "",
         "loss_kind": "contrastive",
     },
     "cl_cc": {
         "label": "CL + CC",
-        "default_checkpoint": "checkpoints/cirr_vitb32_cl_cc/cirr_vitb32_cl_cc-best.ckpt",
+        "default_checkpoint": "checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt",
         "loss_kind": "combined",
     },
 }
@@ -193,9 +193,17 @@ def _sample_options(state: HeatmapState, selected_pair_id: str | None = None) ->
     return "\n".join(rows)
 
 
+def _visible_variant_slots(state: HeatmapState) -> list[tuple[str, ModelSlot]]:
+    return [
+        (key, slot)
+        for key, slot in state.model_slots.items()
+        if slot.available or slot.checkpoint is not None
+    ]
+
+
 def _variant_options(state: HeatmapState, selected_variant: str = "cl_cc") -> str:
     cards = []
-    for key, slot in state.model_slots.items():
+    for key, slot in _visible_variant_slots(state):
         checked = " checked" if key == selected_variant else ""
         status = "ready" if slot.available else "missing"
         checkpoint = str(slot.checkpoint) if slot.checkpoint else "none"
@@ -224,6 +232,9 @@ def _page(
     result: dict[str, Any] | None = None,
     error: str | None = None,
 ) -> str:
+    visible_slots = _visible_variant_slots(state)
+    if visible_slots and selected_variant not in {key for key, _ in visible_slots}:
+        selected_variant = visible_slots[0][0]
     result = result or {}
     sample = result.get("sample") or {}
     phrases = result.get("phrases") or []

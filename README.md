@@ -1,34 +1,22 @@
 # ConText-CIR-CIRR
 
-Pipeline **Composed Image Retrieval** cho CIRR sử dụng `openai/clip-vit-large-patch14` + `targetpad`.
-
-Repo này hiện giữ một so sánh đơn giản:
-
-| Biến thể | Config                                | Mục đích                           | Tên run                  |
-| -------- | ------------------------------------- | ---------------------------------- | ------------------------ |
-| CL-only  | `configs/cirr_context_cir_cl.yaml`    | Baseline retrieval                 | `cirr_vitb32_cl`         |
-| CL+CC    | `configs/cirr_context_cir_cl_cc.yaml` | Retrieval + Text-CC regularization | `cirr_clip_l14_targetpad_cl_cc_t2i` |
-
-Config `CL+CC` hiện tại là hướng parser duy nhất muốn kiểm tra so với `CL-only`:
-
-* `noun_phrase_backend=stanza`
-* `noun_phrase_extractor=constituency_minimal_np`
-* `image_transform=targetpad`
-* `backbone=openai/clip-vit-large-patch14`
-* `lambda_cc=0.08`
-* `text_cc_clean_only=true`
-* `text_cc_clean_min_confidence=0.7`
-* `text_cc_attention_direction=text_to_image`
+* backbone: `openai/clip-vit-large-patch14`
+* image transform: `targetpad`
+* objective: `CL + CC`
+* hướng attention của Text-CC: `text -> image`
+* pipeline noun phrase: `stanza + constituency_minimal_np`
+* config chuẩn: `configs/cirr_context_cir_cl_cc.yaml`
+* tên run chuẩn: `cirr_clip_l14_targetpad_cl_cc_t2i`
 
 ## 1. Cài đặt
 
 ```powershell
-cd D:\1_Documents\Nam_3_HK2\Advanced_Computer_Vision\vscode\ConText-CIR-CIRR
+cd D:/1_Documents/Nam_3_HK2/Advanced_Computer_Vision/vscode/ConText-CIR-CIRR
 conda activate AI
 pip install -r requirements.txt
 ```
 
-Cài đặt Comet tùy chọn:
+Thiết lập Comet tùy chọn:
 
 ```powershell
 copy .env.example .env
@@ -43,16 +31,14 @@ COMET_WORKSPACE=your_workspace
 COMET_PROJECT_NAME=ConText-CIR-CIRR
 ```
 
-Nếu không muốn dùng Comet logging, đặt giá trị sau trong config bạn dùng:
+Nếu không muốn sử dụng Comet logging, đặt giá trị sau trong config:
 
 ```yaml
 logger:
   name: "none"
 ```
 
-## 2. Cấu trúc dataset
-
-Cấu trúc thư mục mong đợi:
+## 2. Cấu trúc dataset mong đợi
 
 ```text
 CIRR/
@@ -71,24 +57,20 @@ Kiểm tra nhanh dataset:
 python scripts/inspect_cirr_dataset.py --config configs/cirr_context_cir_cl_cc.yaml
 ```
 
-Chạy trình xem dataset:
+Mở trình xem dataset:
 
 ```powershell
 python scripts/dataset_app.py --config configs/cirr_context_cir_cl_cc.yaml --port 8002
 ```
 
-Mở:
+Truy cập:
 
 ```text
 Local: http://127.0.0.1:8002
 LAN:   http://<your-lan-ip>:8002
 ```
 
-## 3. Quy trình chạy từ đầu đến cuối
-
-### Bước 1: Export noun phrases
-
-Chạy bước này trước khi train `CL+CC`.
+## 3. Xuất noun phrases
 
 Chuẩn bị tài nguyên Stanza một lần nếu cần:
 
@@ -96,72 +78,56 @@ Chuẩn bị tài nguyên Stanza một lần nếu cần:
 python scripts/export_noun_phrases.py --config configs/cirr_context_cir_cl_cc.yaml --backend stanza --prepare_stanza
 ```
 
-Export Stanza noun phrases cho `val`:
+Xuất cache noun phrase chuẩn cho tất cả các split:
 
 ```powershell
-python scripts/export_noun_phrases.py --config configs/cirr_context_cir_cl_cc.yaml --split val --backend stanza --per_backend_dirs
+python scripts/export_noun_phrases.py --config configs/cirr_context_cir_cl_cc.yaml --split all --backend stanza
 ```
 
-Output chính:
+Các file cache chuẩn được dùng khi training:
 
 ```text
-outputs/noun_phrases/cirr_val_stanza.json
+noun_phrases/cirr_train_stanza.json
+noun_phrases/cirr_val_stanza.json
+noun_phrases/cirr_test1_stanza.json
 ```
 
-Nếu muốn export cả `train` và `test1`:
-
-```powershell
-python scripts/export_noun_phrases.py --config configs/cirr_context_cir_cl_cc.yaml --split all --backend stanza --per_backend_dirs
-```
-
-### Bước 2: Audit chất lượng parser
+## 4. Audit parser trước khi training
 
 Tạo báo cáo audit:
 
 ```powershell
-python tools/audit_cirr_phrases.py --input outputs/noun_phrases/cirr_val_stanza.json --output outputs/noun_phrases/cirr_val_stanza_audit.json
+python tools/audit_cirr_phrases.py --input noun_phrases/cirr_val_stanza.json --output outputs/noun_phrases/cirr_val_stanza_audit.json
 ```
 
-Chạy gate kiểm tra trước khi train:
+Chạy audit gate:
 
 ```powershell
 python tools/check_phrase_audit_gate.py --input outputs/noun_phrases/cirr_val_stanza_audit.json
 ```
 
-Tạo file sample thủ công tùy chọn để kiểm tra `edit_actions`:
+Tùy chọn tạo mẫu audit thủ công:
 
 ```powershell
-python tools/sample_edit_action_audit.py --input outputs/noun_phrases/cirr_val_stanza.json --output outputs/noun_phrases/cirr_val_stanza_edit_actions.csv --n 200
+python tools/sample_edit_action_audit.py --input noun_phrases/cirr_val_stanza.json --output outputs/noun_phrases/cirr_val_stanza_edit_actions.csv --n 200
 ```
 
-### Bước 3: Train hai model
+## 5. Train model chuẩn
 
-Smoke test nhanh:
+Chạy smoke test nhanh:
 
 ```powershell
 python scripts/train.py --config configs/cirr_context_cir_cl_cc.yaml --fast_dev_run
 python -m pytest -q
 ```
 
-Train `CL-only`:
+Training đầy đủ:
 
 ```powershell
-python scripts/train.py --config configs/cirr_context_cir_cl.yaml
+python scripts/train.py --config configs/cirr_context_cir_cl_cc.yaml
 ```
 
-Best checkpoint:
-
-```text
-checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt
-```
-
-Train `CL+CC`:
-
-```powershell
-python scripts/train.py --config configs/cirr_context_cir_cl_cc.yaml --log_cc_grad_norm --cc_grad_norm_interval 200
-```
-
-Best checkpoint:
+Checkpoint tốt nhất:
 
 ```text
 checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt
@@ -169,24 +135,17 @@ checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-
 
 Ghi chú:
 
-* Training chỉ giữ checkpoint tốt nhất (`save_top_k=1`).
-* `edit_actions` vẫn chỉ dùng để audit. Chúng không được đưa vào training loss.
+* chỉ giữ checkpoint tốt nhất (`save_top_k=1`)
+* `edit_actions` hiện chỉ dùng để audit, chưa được đưa vào training loss
+* hướng này sử dụng `text_cc_attention_direction: text_to_image`
 
-### Bước 4: Validate và chọn model thắng
-
-Validate `CL-only`:
-
-```powershell
-python scripts/validate.py --config configs/cirr_context_cir_cl.yaml --checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --split val
-```
-
-Validate `CL+CC`:
+## 6. Validate checkpoint đã train
 
 ```powershell
 python scripts/validate.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --split val
 ```
 
-Các metric chính cần so sánh:
+Các metric chính cần theo dõi:
 
 ```text
 recall@1
@@ -198,39 +157,28 @@ recall_subset@2
 recall_subset@3
 ```
 
-Quy tắc chọn model thắng:
+## 7. Build FAISS indexes
 
-* Nếu `CL+CC` tốt hơn `CL-only` trên các validation metric bạn quan tâm, giữ `CL+CC`.
-* Nếu không, giữ `CL-only`.
-
-### Bước 5: Build FAISS indexes
-
-Bạn có thể build FAISS cho cả hai biến thể, hoặc chỉ build cho model thắng.
-
-Build index cho `CL-only`:
-
-```powershell
-python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl.yaml --checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --split val
-python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl.yaml --checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --split test1
-```
-
-Build index cho `CL+CC`:
+Build cho `val`:
 
 ```powershell
 python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --split val
+```
+
+Build cho `test1`:
+
+```powershell
 python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --split test1
 ```
 
-Output thường gặp:
+Output mong đợi:
 
 ```text
-outputs/faiss/cirr_vitb32_cl/cirr_val/
-outputs/faiss/cirr_vitb32_cl/cirr_test1/
 outputs/faiss/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_val/
 outputs/faiss/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_test1/
 ```
 
-Mỗi thư mục FAISS gồm:
+Mỗi thư mục FAISS chứa:
 
 ```text
 index.faiss
@@ -238,159 +186,129 @@ mapping.json
 metadata.json
 ```
 
-## 4. Demo và Visualization
+## 8. Ứng dụng demo
 
-### Bảng port
+Port map:
 
-Dùng port cố định để các app không bị trùng nhau:
-
-| App                      | Port   |
-| ------------------------ | ------ |
-| Retrieval demo `CL-only` | `8000` |
-| Heatmap UI               | `8001` |
-| Dataset viewer           | `8002` |
-| Retrieval demo `CL+CC`   | `8003` |
+* retrieval demo: `8000`
+* heatmap UI: `8001`
+* dataset viewer: `8002`
 
 ### Retrieval demo
 
-Chạy demo `CL-only`:
-
 ```powershell
-python scripts/retrieve_app.py --config configs/cirr_context_cir_cl.yaml --checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --splits val test1 --port 8000
+python scripts/retrieve_app.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --splits val test1 --port 8000
 ```
 
-Chạy demo `CL+CC`:
-
-```powershell
-python scripts/retrieve_app.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --splits val test1 --port 8003
-```
-
-Mở:
+Truy cập:
 
 ```text
-CL-only local: http://127.0.0.1:8000
-CL-only LAN:   http://<your-lan-ip>:8000
-CL+CC local:   http://127.0.0.1:8003
-CL+CC LAN:     http://<your-lan-ip>:8003
+Local: http://127.0.0.1:8000
+LAN:   http://<your-lan-ip>:8000
 ```
 
 ### Heatmap UI
 
-Chạy Heatmap UI với checkpoint rõ ràng:
+Heatmap UI có thể chạy ở chế độ chỉ dùng CL+CC.
 
 ```powershell
-python scripts/generate_loss_heatmaps.py --config configs/cirr_context_cir_cl_cc.yaml --split val --cl_checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --cl_cc_checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --port 8001
+python scripts/generate_loss_heatmaps.py --config configs/cirr_context_cir_cl_cc.yaml --split val --cl_cc_checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --port 8001
 ```
 
-Mở:
+Truy cập:
 
 ```text
 Local: http://127.0.0.1:8001
 LAN:   http://<your-lan-ip>:8001
 ```
 
-Các thư mục output thường gặp:
-
-```text
-outputs/heatmaps/cl/
-outputs/heatmaps/cl_cc/
-outputs/heatmaps/reports/
-```
-
-## 5. Submission
-
-Tạo submission cho `CL-only`:
+### Dataset viewer
 
 ```powershell
-python scripts/make_cirr_submission.py --config configs/cirr_context_cir_cl.yaml --checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --submission_name cirr_vitb32_cl
+python scripts/dataset_app.py --config configs/cirr_context_cir_cl_cc.yaml --port 8002
 ```
 
-Tạo submission cho `CL+CC`:
+## 9. Submission
 
 ```powershell
 python scripts/make_cirr_submission.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --submission_name cirr_clip_l14_targetpad_cl_cc_t2i
 ```
 
-Output:
+Output mong đợi:
 
 ```text
-outputs/submissions/cirr/<submission_name>.json
-outputs/submissions/cirr/subset_<submission_name>.json
+outputs/submissions/cirr/cirr_clip_l14_targetpad_cl_cc_t2i.json
+outputs/submissions/cirr/subset_cirr_clip_l14_targetpad_cl_cc_t2i.json
 ```
 
-## 6. Thứ tự lệnh chạy nhanh
+## 10. Luồng lệnh nhanh
 
 ```powershell
 python scripts/inspect_cirr_dataset.py --config configs/cirr_context_cir_cl_cc.yaml
 
-python scripts/export_noun_phrases.py --config configs/cirr_context_cir_cl_cc.yaml --split val --backend stanza --per_backend_dirs
-python tools/audit_cirr_phrases.py --input outputs/noun_phrases/cirr_val_stanza.json --output outputs/noun_phrases/cirr_val_stanza_audit.json
+python scripts/export_noun_phrases.py --config configs/cirr_context_cir_cl_cc.yaml --split all --backend stanza
+python tools/audit_cirr_phrases.py --input noun_phrases/cirr_val_stanza.json --output outputs/noun_phrases/cirr_val_stanza_audit.json
 python tools/check_phrase_audit_gate.py --input outputs/noun_phrases/cirr_val_stanza_audit.json
 
-python scripts/train.py --config configs/cirr_context_cir_cl.yaml
-python scripts/train.py --config configs/cirr_context_cir_cl_cc.yaml --log_cc_grad_norm --cc_grad_norm_interval 200
-
-python scripts/validate.py --config configs/cirr_context_cir_cl.yaml --checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --split val
+python scripts/train.py --config configs/cirr_context_cir_cl_cc.yaml
 python scripts/validate.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --split val
 
-python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl.yaml --checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --split val
-python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl.yaml --checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --split test1
 python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --split val
 python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --split test1
 
-python scripts/retrieve_app.py --config configs/cirr_context_cir_cl.yaml --checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --splits val test1 --port 8000
-python scripts/generate_loss_heatmaps.py --config configs/cirr_context_cir_cl_cc.yaml --split val --cl_checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --cl_cc_checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --port 8001
+python scripts/retrieve_app.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --splits val test1 --port 8000
+python scripts/generate_loss_heatmaps.py --config configs/cirr_context_cir_cl_cc.yaml --split val --cl_cc_checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --port 8001
 python scripts/dataset_app.py --config configs/cirr_context_cir_cl_cc.yaml --port 8002
-python scripts/retrieve_app.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --splits val test1 --port 8003
 ```
 
-## 7. Các file quan trọng
+## 11. Các file quan trọng
 
-| Path                                  | Mục đích                            |
-| ------------------------------------- | ----------------------------------- |
-| `configs/cirr_context_cir_cl.yaml`    | Config cho CL-only                  |
-| `configs/cirr_context_cir_cl_cc.yaml` | Config CL+CC chính thức             |
-| `scripts/train.py`                    | Entry point để train                |
-| `scripts/validate.py`                 | Entry point để validate             |
-| `scripts/build_faiss_index.py`        | Build FAISS gallery index           |
-| `scripts/retrieve_app.py`             | FastAPI retrieval demo              |
-| `scripts/dataset_app.py`              | Dataset viewer                      |
-| `scripts/generate_loss_heatmaps.py`   | Heatmap UI                          |
-| `scripts/export_noun_phrases.py`      | Export noun phrase                  |
-| `tools/audit_cirr_phrases.py`         | Báo cáo audit parser                |
-| `tools/check_phrase_audit_gate.py`    | Gate kiểm tra trước khi train CL+CC |
+| Path                                  | Mục đích                                |
+| ------------------------------------- | --------------------------------------- |
+| `configs/cirr_context_cir_cl_cc.yaml` | config CL+CC chuẩn                      |
+| `scripts/train.py`                    | entry point để training                 |
+| `scripts/validate.py`                 | entry point để validation               |
+| `scripts/build_faiss_index.py`        | công cụ build FAISS index               |
+| `scripts/retrieve_app.py`             | demo retrieval bằng FastAPI             |
+| `scripts/generate_loss_heatmaps.py`   | heatmap UI                              |
+| `scripts/dataset_app.py`              | trình xem dataset                       |
+| `scripts/export_noun_phrases.py`      | xuất noun phrase                        |
+| `tools/audit_cirr_phrases.py`         | báo cáo audit parser                    |
+| `tools/check_phrase_audit_gate.py`    | gate kiểm tra parser trước khi training |
 
-## 8. Khắc phục lỗi thường gặp
+## 12. Troubleshooting
 
-### Stanza lỗi trên Windows
+### Lỗi Stanza trên Windows
 
-Chuẩn bị tài nguyên trước:
+Chuẩn bị Stanza trước:
 
 ```powershell
 python scripts/export_noun_phrases.py --config configs/cirr_context_cir_cl_cc.yaml --backend stanza --prepare_stanza
 ```
 
-Nếu vẫn lỗi, đừng train nhầm từ fallback export. Hãy sửa Stanza trước, rồi export lại.
+Nếu vẫn lỗi, hãy sửa Stanza trước rồi export lại. Không tiếp tục training nếu pipeline đang fallback sang backend không mong muốn.
 
-### Retrieval demo mở trước khi FAISS tồn tại
+### Retrieval demo báo thiếu FAISS index
 
-Hãy build FAISS trước cho split bạn muốn xem.
+Hãy build FAISS index cho split muốn xem trước khi mở retrieval demo.
 
 ### CUDA out of memory
 
-Giảm các giá trị trong YAML:
+Giảm các giá trị sau trong file YAML:
 
 ```yaml
 train:
-  batch_size: 32
-  val_batch_size: 64
-  accumulate_grad_batches: 2
+  batch_size: 8
+  val_batch_size: 16
+  accumulate_grad_batches: 4
 ```
 
-hoặc giảm số layer được train:
+Hoặc giảm số layer được train:
 
 ```yaml
 model:
   trainable_vision_layers: 1
   trainable_text_layers: 1
 ```
+
+Nếu vẫn còn lỗi bộ nhớ, có thể tiếp tục giảm batch size hoặc tăng `accumulate_grad_batches` tùy dung lượng GPU.

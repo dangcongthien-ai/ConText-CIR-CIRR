@@ -408,10 +408,14 @@ def _page(
     button:hover {{ transform: translateY(-1px); }}
     button:disabled {{ opacity: 0.72; cursor: wait; transform: none; }}
     .warn-stack {{
+      min-width: 0;
       display: grid;
       gap: 8px;
     }}
     .warn {{
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      word-break: break-word;
       color: var(--warn);
       font-size: 12px;
       font-weight: 700;
