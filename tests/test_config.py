@@ -17,6 +17,10 @@ def test_default_cl_cc_config_loads_as_best_candidate():
     assert data["data"]["noun_phrase_backend"] == "stanza"
     assert data["data"]["noun_phrase_extractor"] == "constituency_minimal_np"
     assert data["faiss"]["index_type"] == "flat_ip"
+    assert data["data"]["image_transform"] == "targetpad"
+    assert math.isclose(data["data"]["target_pad_ratio"], 1.25)
+    assert data["model"]["backbone"] == "openai/clip-vit-large-patch14"
+    assert data["model"]["backbone_size"] == "L"
     assert data["model"]["freeze_vision_encoder"] is True
     assert data["model"]["freeze_text_encoder"] is True
     assert data["model"]["trainable_vision_layers"] == 2
@@ -29,14 +33,16 @@ def test_default_cl_cc_config_loads_as_best_candidate():
     assert data["loss"]["text_cc_clean_only"] is True
     assert math.isclose(data["loss"]["text_cc_clean_min_confidence"], 0.7)
     assert data["loss"]["text_cc_attention_direction"] == "text_to_image"
-    assert math.isclose(data["train"]["encoder_learning_rate"], 2.0e-6)
+    assert math.isclose(data["train"]["learning_rate"], 1.5e-5)
+    assert math.isclose(data["train"]["encoder_learning_rate"], 1.0e-6)
     assert math.isclose(data["train"]["encoder_weight_decay"], 5.0e-3)
-    assert data["train"]["batch_size"] == 64
-    assert data["train"]["accumulate_grad_batches"] == 1
+    assert data["train"]["batch_size"] == 16
+    assert data["train"]["val_batch_size"] == 32
+    assert data["train"]["accumulate_grad_batches"] == 2
     assert data["train"]["early_stopping_patience"] == 3
     assert math.isclose(data["train"]["early_stopping_min_delta"], 0.005)
     assert data["train"]["save_top_k"] == 1
-    assert data["logger"]["experiment_name"] == "cirr_vitb32_cl_cc_best"
+    assert data["logger"]["experiment_name"] == "cirr_clip_l14_targetpad_cl_cc_t2i"
 
 
 def test_only_two_canonical_training_configs_remain():
@@ -50,12 +56,13 @@ def test_only_two_canonical_training_configs_remain():
             "clean_only": False,
         },
         "configs/cirr_context_cir_cl_cc.yaml": {
-            "experiment_name": "cirr_vitb32_cl_cc_best",
+            "experiment_name": "cirr_clip_l14_targetpad_cl_cc_t2i",
             "lambda_cont": 1.0,
             "lambda_cc": 0.08,
             "backend": "stanza",
             "extractor": "constituency_minimal_np",
             "clean_only": True,
+            "image_transform": "targetpad",
         },
     }
     for path, expected in variants.items():
@@ -67,6 +74,8 @@ def test_only_two_canonical_training_configs_remain():
         assert data["data"]["noun_phrase_backend"] == expected["backend"]
         assert data["data"]["noun_phrase_extractor"] == expected["extractor"]
         assert data["data"]["noun_phrase_cache_dir"] == "noun_phrases"
+        if "image_transform" in expected:
+            assert data["data"]["image_transform"] == expected["image_transform"]
         assert data["data"]["use_exported_noun_phrases"] is True
         assert data["loss"]["text_cc_clean_only"] is expected["clean_only"]
         assert math.isclose(data["loss"]["text_cc_clean_min_confidence"], 0.7)

@@ -33,14 +33,14 @@ class DataConfig:
     stanza_download_method: str = "reuse_resources"
     num_workers: int = 8
     noun_phrase_extractor: str = "constituency"
-    image_transform: str = "clip"
+    image_transform: str = "targetpad"
     target_pad_ratio: float = 1.25
 
 
 @dataclass
 class ModelConfig:
-    backbone: str = "openai/clip-vit-base-patch32"
-    backbone_size: str = "B"
+    backbone: str = "openai/clip-vit-large-patch14"
+    backbone_size: str = "L"
     num_cross_attention_layers: int = 4
     num_heads: int = 8
     dropout: float = 0.0
@@ -99,7 +99,7 @@ class LoggerConfig:
     offline: bool = False
     project_name: str = "ConText-CIR-CIRR"
     workspace: Optional[str] = None
-    experiment_name: str = "cirr_vitb32_cl_cc"
+    experiment_name: str = "cirr_clip_l14_targetpad_cl_cc_t2i"
     log_artifacts: bool = True
 
 

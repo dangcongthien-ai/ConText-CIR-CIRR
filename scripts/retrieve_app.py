@@ -208,6 +208,7 @@ def _page(
     body {{
       margin: 0;
       min-height: 100vh;
+      overflow-x: hidden;
       background:
         radial-gradient(circle at top left, rgba(15, 118, 110, 0.10), transparent 28%),
         linear-gradient(180deg, var(--bg-accent) 0%, var(--bg) 26%, #f8faf9 100%);
@@ -272,11 +273,12 @@ def _page(
       width: min(1200px, calc(100vw - 32px));
       margin: 22px auto 36px;
       display: grid;
-      grid-template-columns: 380px 1fr;
+      grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
       gap: 20px;
       align-items: start;
     }}
     .panel {{
+      min-width: 0;
       background: rgba(255, 255, 255, 0.94);
       border: 1px solid rgba(214, 226, 219, 0.92);
       border-radius: var(--radius);
@@ -325,11 +327,16 @@ def _page(
       line-height: 1.4;
     }}
     .query {{
-      padding: 14px;
+      min-width: 0;
+      padding: 14px 18px 18px;
       display: grid;
       gap: 14px;
     }}
+    .query > * {{
+      min-width: 0;
+    }}
     label {{
+      min-width: 0;
       display: grid;
       gap: 6px;
       color: #344054;
@@ -338,6 +345,8 @@ def _page(
     }}
     input, select, textarea {{
       width: 100%;
+      max-width: 100%;
+      min-width: 0;
       border: 1px solid var(--line);
       border-radius: var(--radius-sm);
       padding: 11px 12px;
@@ -346,6 +355,11 @@ def _page(
       font: inherit;
       font-size: 14px;
       transition: border-color 0.18s ease, box-shadow 0.18s ease;
+    }}
+    input[type="file"] {{
+      overflow: hidden;
+      padding: 10px 12px;
+      line-height: 1.35;
     }}
     input:focus, select:focus, textarea:focus {{
       outline: none;
@@ -358,22 +372,25 @@ def _page(
       line-height: 1.45;
     }}
     .row {{
+      min-width: 0;
       display: grid;
-      grid-template-columns: 1fr 112px;
+      grid-template-columns: minmax(0, 1fr) 112px;
       gap: 10px;
     }}
     .search-actions {{
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: space-between;
       gap: 12px;
       flex-wrap: wrap;
     }}
     .helper {{
+      flex: 1 1 220px;
+      min-width: 0;
       color: var(--muted);
       font-size: 12px;
       line-height: 1.45;
-      max-width: 200px;
+      max-width: none;
     }}
     button {{
       min-width: 126px;
@@ -404,6 +421,7 @@ def _page(
       border: 1px solid rgba(181, 71, 8, 0.16);
     }}
     .results-head {{
+      min-width: 0;
       padding: 18px 18px 14px;
       display: flex;
       justify-content: space-between;
@@ -412,6 +430,7 @@ def _page(
       align-items: flex-start;
     }}
     .results-copy {{
+      min-width: 0;
       display: grid;
       gap: 4px;
     }}
@@ -425,6 +444,7 @@ def _page(
       line-height: 1.4;
     }}
     .grid {{
+      min-width: 0;
       padding: 18px;
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
@@ -473,6 +493,7 @@ def _page(
         flex-direction: column;
       }}
       main {{ grid-template-columns: 1fr; }}
+      .row {{ grid-template-columns: 1fr; }}
     }}
   </style>
 </head>

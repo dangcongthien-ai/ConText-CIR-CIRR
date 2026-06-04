@@ -19,10 +19,12 @@ data:
   stanza_resources_dir: ".stanza_resources"
   stanza_download_method: "none"
   num_workers: 8
+  image_transform: "targetpad"
+  target_pad_ratio: 1.25
 
 model:
-  backbone: "openai/clip-vit-base-patch32"
-  backbone_size: "B"
+  backbone: "openai/clip-vit-large-patch14"
+  backbone_size: "L"
   num_cross_attention_layers: 4
   num_heads: 8
   dropout: 0.1
@@ -47,11 +49,11 @@ loss:
   text_cc_attention_direction: "text_to_image"
 
 train:
-  batch_size: 64
-  val_batch_size: 128
+  batch_size: 16
+  val_batch_size: 32
   max_epochs: 20
-  learning_rate: 2.0e-5
-  encoder_learning_rate: 2.0e-6
+  learning_rate: 1.5e-5
+  encoder_learning_rate: 1.0e-6
   weight_decay: 1.0e-2
   encoder_weight_decay: 5.0e-3
   warmup_ratio: 0.05
@@ -60,7 +62,7 @@ train:
   devices: 1
   gradient_clip_val: 1.0
   val_check_interval: 1.0
-  accumulate_grad_batches: 1
+  accumulate_grad_batches: 2
   early_stopping_patience: 3
   early_stopping_min_delta: 0.005
   save_top_k: 1
@@ -74,12 +76,12 @@ logger:
   offline: false
   project_name: "ConText-CIR-CIRR"
   workspace: null
-  experiment_name: "cirr_vitb32_cl_cc_best"
+  experiment_name: "cirr_clip_l14_targetpad_cl_cc_t2i"
   log_artifacts: true
 
 faiss:
   index_type: "flat_ip"
   top_k: 50
-  output_dir: "outputs/faiss/cirr_vitb32_cl_cc_best"
+  output_dir: "outputs/faiss/cirr_clip_l14_targetpad_cl_cc_t2i"
   hnsw_m: 32
   hnsw_ef_search: 64

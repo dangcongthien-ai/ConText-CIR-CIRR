@@ -1,21 +1,24 @@
 # ConText-CIR-CIRR
 
-Pipeline **Composed Image Retrieval** cho CIRR sử dụng `openai/clip-vit-base-patch32`.
+Pipeline **Composed Image Retrieval** cho CIRR sử dụng `openai/clip-vit-large-patch14` + `targetpad`.
 
 Repo này hiện giữ một so sánh đơn giản:
 
 | Biến thể | Config                                | Mục đích                           | Tên run                  |
 | -------- | ------------------------------------- | ---------------------------------- | ------------------------ |
 | CL-only  | `configs/cirr_context_cir_cl.yaml`    | Baseline retrieval                 | `cirr_vitb32_cl`         |
-| CL+CC    | `configs/cirr_context_cir_cl_cc.yaml` | Retrieval + Text-CC regularization | `cirr_vitb32_cl_cc_best` |
+| CL+CC    | `configs/cirr_context_cir_cl_cc.yaml` | Retrieval + Text-CC regularization | `cirr_clip_l14_targetpad_cl_cc_t2i` |
 
 Config `CL+CC` hiện tại là hướng parser duy nhất muốn kiểm tra so với `CL-only`:
 
 * `noun_phrase_backend=stanza`
 * `noun_phrase_extractor=constituency_minimal_np`
+* `image_transform=targetpad`
+* `backbone=openai/clip-vit-large-patch14`
 * `lambda_cc=0.08`
 * `text_cc_clean_only=true`
 * `text_cc_clean_min_confidence=0.7`
+* `text_cc_attention_direction=text_to_image`
 
 ## 1. Cài đặt
 
@@ -161,7 +164,7 @@ python scripts/train.py --config configs/cirr_context_cir_cl_cc.yaml --log_cc_gr
 Best checkpoint:
 
 ```text
-checkpoints/cirr_vitb32_cl_cc_best/cirr_vitb32_cl_cc_best-best.ckpt
+checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt
 ```
 
 Ghi chú:
@@ -180,7 +183,7 @@ python scripts/validate.py --config configs/cirr_context_cir_cl.yaml --checkpoin
 Validate `CL+CC`:
 
 ```powershell
-python scripts/validate.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc_best/cirr_vitb32_cl_cc_best-best.ckpt --split val
+python scripts/validate.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --split val
 ```
 
 Các metric chính cần so sánh:
@@ -214,8 +217,8 @@ python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl.yaml --
 Build index cho `CL+CC`:
 
 ```powershell
-python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc_best/cirr_vitb32_cl_cc_best-best.ckpt --split val
-python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc_best/cirr_vitb32_cl_cc_best-best.ckpt --split test1
+python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --split val
+python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --split test1
 ```
 
 Output thường gặp:
@@ -223,8 +226,8 @@ Output thường gặp:
 ```text
 outputs/faiss/cirr_vitb32_cl/cirr_val/
 outputs/faiss/cirr_vitb32_cl/cirr_test1/
-outputs/faiss/cirr_vitb32_cl_cc_best/cirr_val/
-outputs/faiss/cirr_vitb32_cl_cc_best/cirr_test1/
+outputs/faiss/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_val/
+outputs/faiss/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_test1/
 ```
 
 Mỗi thư mục FAISS gồm:
@@ -259,7 +262,7 @@ python scripts/retrieve_app.py --config configs/cirr_context_cir_cl.yaml --check
 Chạy demo `CL+CC`:
 
 ```powershell
-python scripts/retrieve_app.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc_best/cirr_vitb32_cl_cc_best-best.ckpt --splits val test1 --port 8003
+python scripts/retrieve_app.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --splits val test1 --port 8003
 ```
 
 Mở:
@@ -276,7 +279,7 @@ CL+CC LAN:     http://<your-lan-ip>:8003
 Chạy Heatmap UI với checkpoint rõ ràng:
 
 ```powershell
-python scripts/generate_loss_heatmaps.py --config configs/cirr_context_cir_cl_cc.yaml --split val --cl_checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --cl_cc_checkpoint checkpoints/cirr_vitb32_cl_cc_best/cirr_vitb32_cl_cc_best-best.ckpt --port 8001
+python scripts/generate_loss_heatmaps.py --config configs/cirr_context_cir_cl_cc.yaml --split val --cl_checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --cl_cc_checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --port 8001
 ```
 
 Mở:
@@ -305,7 +308,7 @@ python scripts/make_cirr_submission.py --config configs/cirr_context_cir_cl.yaml
 Tạo submission cho `CL+CC`:
 
 ```powershell
-python scripts/make_cirr_submission.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc_best/cirr_vitb32_cl_cc_best-best.ckpt --submission_name cirr_vitb32_cl_cc_best
+python scripts/make_cirr_submission.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --submission_name cirr_clip_l14_targetpad_cl_cc_t2i
 ```
 
 Output:
@@ -328,17 +331,17 @@ python scripts/train.py --config configs/cirr_context_cir_cl.yaml
 python scripts/train.py --config configs/cirr_context_cir_cl_cc.yaml --log_cc_grad_norm --cc_grad_norm_interval 200
 
 python scripts/validate.py --config configs/cirr_context_cir_cl.yaml --checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --split val
-python scripts/validate.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc_best/cirr_vitb32_cl_cc_best-best.ckpt --split val
+python scripts/validate.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --split val
 
 python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl.yaml --checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --split val
 python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl.yaml --checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --split test1
-python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc_best/cirr_vitb32_cl_cc_best-best.ckpt --split val
-python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc_best/cirr_vitb32_cl_cc_best-best.ckpt --split test1
+python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --split val
+python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --split test1
 
 python scripts/retrieve_app.py --config configs/cirr_context_cir_cl.yaml --checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --splits val test1 --port 8000
-python scripts/generate_loss_heatmaps.py --config configs/cirr_context_cir_cl_cc.yaml --split val --cl_checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --cl_cc_checkpoint checkpoints/cirr_vitb32_cl_cc_best/cirr_vitb32_cl_cc_best-best.ckpt --port 8001
+python scripts/generate_loss_heatmaps.py --config configs/cirr_context_cir_cl_cc.yaml --split val --cl_checkpoint checkpoints/cirr_vitb32_cl/cirr_vitb32_cl-best.ckpt --cl_cc_checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --port 8001
 python scripts/dataset_app.py --config configs/cirr_context_cir_cl_cc.yaml --port 8002
-python scripts/retrieve_app.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_vitb32_cl_cc_best/cirr_vitb32_cl_cc_best-best.ckpt --splits val test1 --port 8003
+python scripts/retrieve_app.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --splits val test1 --port 8003
 ```
 
 ## 7. Các file quan trọng
