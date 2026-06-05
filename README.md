@@ -207,21 +207,6 @@ Local: http://127.0.0.1:8000
 LAN:   http://<your-lan-ip>:8000
 ```
 
-### Heatmap UI
-
-Heatmap UI có thể chạy ở chế độ chỉ dùng CL+CC.
-
-```powershell
-python scripts/generate_loss_heatmaps.py --config configs/cirr_context_cir_cl_cc.yaml --split val --cl_cc_checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --port 8001
-```
-
-Truy cập:
-
-```text
-Local: http://127.0.0.1:8001
-LAN:   http://<your-lan-ip>:8001
-```
-
 ### Dataset viewer
 
 ```powershell
@@ -257,7 +242,6 @@ python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl_cc.yaml
 python scripts/build_faiss_index.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --split test1
 
 python scripts/retrieve_app.py --config configs/cirr_context_cir_cl_cc.yaml --checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --splits val test1 --port 8000
-python scripts/generate_loss_heatmaps.py --config configs/cirr_context_cir_cl_cc.yaml --split val --cl_cc_checkpoint checkpoints/cirr_clip_l14_targetpad_cl_cc_t2i/cirr_clip_l14_targetpad_cl_cc_t2i-best.ckpt --port 8001
 python scripts/dataset_app.py --config configs/cirr_context_cir_cl_cc.yaml --port 8002
 ```
 
@@ -270,45 +254,8 @@ python scripts/dataset_app.py --config configs/cirr_context_cir_cl_cc.yaml --por
 | `scripts/validate.py`                 | entry point để validation               |
 | `scripts/build_faiss_index.py`        | công cụ build FAISS index               |
 | `scripts/retrieve_app.py`             | demo retrieval bằng FastAPI             |
-| `scripts/generate_loss_heatmaps.py`   | heatmap UI                              |
+| `scripts/generate_loss_heatmaps.py`   | heatmap                            |
 | `scripts/dataset_app.py`              | trình xem dataset                       |
 | `scripts/export_noun_phrases.py`      | xuất noun phrase                        |
 | `tools/audit_cirr_phrases.py`         | báo cáo audit parser                    |
 | `tools/check_phrase_audit_gate.py`    | gate kiểm tra parser trước khi training |
-
-## 12. Troubleshooting
-
-### Lỗi Stanza trên Windows
-
-Chuẩn bị Stanza trước:
-
-```powershell
-python scripts/export_noun_phrases.py --config configs/cirr_context_cir_cl_cc.yaml --backend stanza --prepare_stanza
-```
-
-Nếu vẫn lỗi, hãy sửa Stanza trước rồi export lại. Không tiếp tục training nếu pipeline đang fallback sang backend không mong muốn.
-
-### Retrieval demo báo thiếu FAISS index
-
-Hãy build FAISS index cho split muốn xem trước khi mở retrieval demo.
-
-### CUDA out of memory
-
-Giảm các giá trị sau trong file YAML:
-
-```yaml
-train:
-  batch_size: 8
-  val_batch_size: 16
-  accumulate_grad_batches: 4
-```
-
-Hoặc giảm số layer được train:
-
-```yaml
-model:
-  trainable_vision_layers: 1
-  trainable_text_layers: 1
-```
-
-Nếu vẫn còn lỗi bộ nhớ, có thể tiếp tục giảm batch size hoặc tăng `accumulate_grad_batches` tùy dung lượng GPU.
