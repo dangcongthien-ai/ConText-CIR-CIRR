@@ -20,6 +20,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from cir_pipeline.config import AppConfig, load_config
+from cir_pipeline.data.transforms import build_clip_transform
 from cir_pipeline.engine.train_module import load_cir_module_from_checkpoint
 from cir_pipeline.retrieval.faiss_index import FaissIndex, load_mapping
 from cir_pipeline.retrieval.search import encode_query_image_text, search_loaded_index
@@ -43,10 +44,10 @@ class DemoState:
     upload_dir: Path
     device: torch.device
     model: Any
+    query_transform: Any
     index_sets: dict[str, IndexSet]
     index_errors: dict[str, str]
     lock: threading.Lock
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a FastAPI demo for CIR image + text retrieval.")
@@ -207,6 +208,7 @@ def _page(
     body {{
       margin: 0;
       min-height: 100vh;
+      overflow-x: hidden;
       background:
         radial-gradient(circle at top left, rgba(15, 118, 110, 0.10), transparent 28%),
         linear-gradient(180deg, var(--bg-accent) 0%, var(--bg) 26%, #f8faf9 100%);
@@ -271,11 +273,12 @@ def _page(
       width: min(1200px, calc(100vw - 32px));
       margin: 22px auto 36px;
       display: grid;
-      grid-template-columns: 380px 1fr;
+      grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
       gap: 20px;
       align-items: start;
     }}
     .panel {{
+      min-width: 0;
       background: rgba(255, 255, 255, 0.94);
       border: 1px solid rgba(214, 226, 219, 0.92);
       border-radius: var(--radius);
@@ -324,11 +327,16 @@ def _page(
       line-height: 1.4;
     }}
     .query {{
-      padding: 14px;
+      min-width: 0;
+      padding: 14px 18px 18px;
       display: grid;
       gap: 14px;
     }}
+    .query > * {{
+      min-width: 0;
+    }}
     label {{
+      min-width: 0;
       display: grid;
       gap: 6px;
       color: #344054;
@@ -337,6 +345,8 @@ def _page(
     }}
     input, select, textarea {{
       width: 100%;
+      max-width: 100%;
+      min-width: 0;
       border: 1px solid var(--line);
       border-radius: var(--radius-sm);
       padding: 11px 12px;
@@ -345,6 +355,11 @@ def _page(
       font: inherit;
       font-size: 14px;
       transition: border-color 0.18s ease, box-shadow 0.18s ease;
+    }}
+    input[type="file"] {{
+      overflow: hidden;
+      padding: 10px 12px;
+      line-height: 1.35;
     }}
     input:focus, select:focus, textarea:focus {{
       outline: none;
@@ -357,22 +372,25 @@ def _page(
       line-height: 1.45;
     }}
     .row {{
+      min-width: 0;
       display: grid;
-      grid-template-columns: 1fr 112px;
+      grid-template-columns: minmax(0, 1fr) 112px;
       gap: 10px;
     }}
     .search-actions {{
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: space-between;
       gap: 12px;
       flex-wrap: wrap;
     }}
     .helper {{
+      flex: 1 1 220px;
+      min-width: 0;
       color: var(--muted);
       font-size: 12px;
       line-height: 1.45;
-      max-width: 200px;
+      max-width: none;
     }}
     button {{
       min-width: 126px;
@@ -390,10 +408,14 @@ def _page(
     button:hover {{ transform: translateY(-1px); }}
     button:disabled {{ opacity: 0.72; cursor: wait; transform: none; }}
     .warn-stack {{
+      min-width: 0;
       display: grid;
       gap: 8px;
     }}
     .warn {{
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      word-break: break-word;
       color: var(--warn);
       font-size: 12px;
       font-weight: 700;
@@ -403,6 +425,7 @@ def _page(
       border: 1px solid rgba(181, 71, 8, 0.16);
     }}
     .results-head {{
+      min-width: 0;
       padding: 18px 18px 14px;
       display: flex;
       justify-content: space-between;
@@ -411,6 +434,7 @@ def _page(
       align-items: flex-start;
     }}
     .results-copy {{
+      min-width: 0;
       display: grid;
       gap: 4px;
     }}
@@ -424,6 +448,7 @@ def _page(
       line-height: 1.4;
     }}
     .grid {{
+      min-width: 0;
       padding: 18px;
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
@@ -472,6 +497,7 @@ def _page(
         flex-direction: column;
       }}
       main {{ grid-template-columns: 1fr; }}
+      .row {{ grid-template-columns: 1fr; }}
     }}
   </style>
 </head>
@@ -731,7 +757,7 @@ def _search(
         raise KeyError(f"FAISS gallery is not loaded for split: {gallery_split}")
     index_set = state.index_sets[gallery_split]
     with state.lock:
-        query_embedding = encode_query_image_text(state.model, image_path, text, state.device)
+        query_embedding = encode_query_image_text(state.model, image_path, text, state.device, state.query_transform)
         results = search_loaded_index(
             index_set.faiss_index,
             index_set.mapping,
@@ -782,6 +808,13 @@ def _create_demo_state(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     module = load_cir_module_from_checkpoint(checkpoint, cfg=cfg, map_location=device)
     model = module.model.to(device).eval()
+    query_transform = build_clip_transform(
+        None,
+        False,
+        cfg.model.backbone,
+        getattr(cfg.data, "image_transform", "clip"),
+        float(getattr(cfg.data, "target_pad_ratio", 1.25)),
+    )
     index_sets, index_errors = _load_index_sets(
         cfg,
         split=split,
@@ -801,6 +834,7 @@ def _create_demo_state(
         upload_dir=upload_dir,
         device=device,
         model=model,
+        query_transform=query_transform,
         index_sets=index_sets,
         index_errors=index_errors,
         lock=threading.Lock(),

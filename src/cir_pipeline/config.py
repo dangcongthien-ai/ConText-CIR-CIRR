@@ -27,20 +27,25 @@ class DataConfig:
     use_extended_captions: bool = False
     skip_empty_captions: bool = True
     noun_phrase_backend: str = "regex"
+    noun_phrase_cache_dir: Optional[str] = "noun_phrases"
+    use_exported_noun_phrases: bool = True
     stanza_resources_dir: Optional[str] = None
     stanza_download_method: str = "reuse_resources"
     num_workers: int = 8
     noun_phrase_extractor: str = "constituency"
+    image_transform: str = "targetpad"
+    target_pad_ratio: float = 1.25
 
 
 @dataclass
 class ModelConfig:
-    backbone: str = "openai/clip-vit-base-patch32"
-    backbone_size: str = "B"
+    backbone: str = "openai/clip-vit-large-patch14"
+    backbone_size: str = "L"
     num_cross_attention_layers: int = 4
     num_heads: int = 8
     dropout: float = 0.0
     projection_dim: Optional[int] = None
+    use_native_clip_projection: bool = False
     normalize_embeddings: bool = True
     freeze_vision_encoder: bool = True
     freeze_text_encoder: bool = True
@@ -60,6 +65,7 @@ class LossConfig:
     query_negative_weight: float = 1.0
     text_cc_clean_only: bool = False
     text_cc_clean_min_confidence: float = 0.7
+    text_cc_attention_direction: str = "text_to_image"
 
 
 @dataclass
@@ -93,7 +99,7 @@ class LoggerConfig:
     offline: bool = False
     project_name: str = "ConText-CIR-CIRR"
     workspace: Optional[str] = None
-    experiment_name: str = "cirr_vitb32_cl_cc"
+    experiment_name: str = "cirr_clip_l14_targetpad_cl_cc_t2i"
     log_artifacts: bool = True
 
 
@@ -184,6 +190,11 @@ def _validate_data_config(cfg: DataConfig) -> None:
         cfg.stanza_download_method in {"none", "reuse_resources", "download_resources"},
         "data.stanza_download_method must be one of: none, reuse_resources, download_resources.",
     )
+    _require(
+        cfg.image_transform in {"clip", "squarepad", "targetpad"},
+        "data.image_transform must be one of: clip, squarepad, targetpad.",
+    )
+    _require(cfg.target_pad_ratio > 0, "data.target_pad_ratio must be > 0.")
 
 
 def _validate_loss_config(cfg: LossConfig) -> None:
@@ -193,6 +204,10 @@ def _validate_loss_config(cfg: LossConfig) -> None:
     _require(cfg.lambda_cont > 0 or cfg.lambda_cc > 0, "At least one loss weight must be > 0.")
     _require(cfg.query_negative_weight >= 0, "loss.query_negative_weight must be >= 0.")
     _require(0 <= cfg.text_cc_clean_min_confidence <= 1, "loss.text_cc_clean_min_confidence must be within [0, 1].")
+    _require(
+        cfg.text_cc_attention_direction in {"image_to_text", "text_to_image"},
+        "loss.text_cc_attention_direction must be one of: image_to_text, text_to_image.",
+    )
 
 
 def _validate_model_config(cfg: ModelConfig) -> None:

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import torch
 from torch import nn
-from transformers import CLIPTextModel, CLIPTokenizerFast, CLIPVisionModel
+from transformers import CLIPModel, CLIPTokenizerFast
 
 
 def _last_hidden_state(outputs) -> torch.Tensor:
@@ -66,19 +66,19 @@ def _load_clip_tokenizer_from_hub_files(backbone: str) -> CLIPTokenizerFast:
         raise
 
 
-def _load_clip_model(model_cls, backbone: str):
+def _load_clip_model(backbone: str) -> CLIPModel:
     try:
-        return model_cls.from_pretrained(backbone, use_safetensors=True)
+        return CLIPModel.from_pretrained(backbone, use_safetensors=True)
     except (OSError, ValueError) as safetensors_error:
         warnings.warn(
-            f"Could not load {model_cls.__name__} for {backbone!r} with safetensors; "
+            f"Could not load CLIPModel for {backbone!r} with safetensors; "
             f"retrying with PyTorch weights. Original error: {safetensors_error}"
         )
         try:
-            return model_cls.from_pretrained(backbone, use_safetensors=False)
+            return CLIPModel.from_pretrained(backbone, use_safetensors=False)
         except Exception as pytorch_error:
             raise RuntimeError(
-                f"Could not load {model_cls.__name__} for {backbone!r} with safetensors or PyTorch weights. "
+                f"Could not load CLIPModel for {backbone!r} with safetensors or PyTorch weights. "
                 f"Safetensors error was: {safetensors_error}"
             ) from pytorch_error
 
@@ -88,11 +88,38 @@ class CLIPTokenEncoders(nn.Module):
 
     def __init__(self, backbone: str) -> None:
         super().__init__()
-        self.vision_model = _load_clip_model(CLIPVisionModel, backbone)
-        self.text_model = _load_clip_model(CLIPTextModel, backbone)
+        self.clip_model = _load_clip_model(backbone)
         self.tokenizer = _load_clip_tokenizer(backbone)
         self.image_embedding_dim = int(self.vision_model.config.hidden_size)
         self.text_embedding_dim = int(self.text_model.config.hidden_size)
+        self.embedding_projection_dim = int(
+            getattr(self.clip_model.config, "projection_dim", self.image_embedding_dim)
+        )
+        for parameter in self.visual_projection.parameters():
+            parameter.requires_grad = False
+        for parameter in self.text_projection.parameters():
+            parameter.requires_grad = False
+        self.logit_scale.requires_grad = False
+
+    @property
+    def vision_model(self):
+        return self.clip_model.vision_model
+
+    @property
+    def text_model(self):
+        return self.clip_model.text_model
+
+    @property
+    def visual_projection(self):
+        return self.clip_model.visual_projection
+
+    @property
+    def text_projection(self):
+        return self.clip_model.text_projection
+
+    @property
+    def logit_scale(self):
+        return self.clip_model.logit_scale
 
     def configure_gradient_checkpointing(self, enabled: bool) -> None:
         for model in (self.vision_model, self.text_model):

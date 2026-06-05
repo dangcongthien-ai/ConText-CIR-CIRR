@@ -5,6 +5,8 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 
+_VALID_ATTENTION_LAYOUTS = {"image_to_text", "text_to_image"}
+
 
 def retrieval_contrastive_loss(
     query_embeddings: torch.Tensor,
@@ -36,7 +38,7 @@ def _average_attention(attention_maps: list[torch.Tensor]) -> torch.Tensor:
         raise ValueError("Expected at least one attention map for Text CC loss.")
     stacked = torch.stack(attention_maps, dim=0)
     if stacked.ndim != 5:
-        raise ValueError("Expected attention maps with shape (batch, heads, image_tokens, text_tokens).")
+        raise ValueError("Expected attention maps with shape (batch, heads, query_tokens, key_tokens).")
     return stacked.mean(dim=(0, 2))
 
 
@@ -47,9 +49,14 @@ def text_concept_consistency_loss(
     isolated_token_indices: list[list[int]],
     sample_indices: list[int],
     epsilon: float = 0.05,
+    attention_layout: str = "image_to_text",
 ) -> torch.Tensor:
-    """Compare full-caption and isolated noun-phrase image-token attention distributions."""
+    """Compare full-caption and isolated noun-phrase image-region distributions."""
 
+    if attention_layout not in _VALID_ATTENTION_LAYOUTS:
+        raise ValueError(
+            "attention_layout must be one of: image_to_text, text_to_image."
+        )
     if not full_token_indices or not isolated_token_indices or not sample_indices:
         ref = full_attention_maps[0]
         return ref.new_zeros(())
@@ -64,12 +71,10 @@ def text_concept_consistency_loss(
             continue
         full_idx_tensor = torch.tensor(full_idx, device=full_attn.device)
         iso_idx_tensor = torch.tensor(iso_token_idx, device=iso_attn.device)
-        valid_full = full_idx_tensor[full_idx_tensor < full_attn.shape[-1]]
-        valid_iso = iso_idx_tensor[iso_idx_tensor < iso_attn.shape[-1]]
-        if valid_full.numel() == 0 or valid_iso.numel() == 0:
+        full_dist = _phrase_image_distribution(full_attn[sample_idx], full_idx_tensor, attention_layout)
+        iso_dist = _phrase_image_distribution(iso_attn[iso_idx], iso_idx_tensor, attention_layout)
+        if full_dist is None or iso_dist is None:
             continue
-        full_dist = _phrase_image_distribution(full_attn[sample_idx], valid_full)
-        iso_dist = _phrase_image_distribution(iso_attn[iso_idx], valid_iso)
         losses.append(torch.relu(_jensen_shannon_divergence(full_dist, iso_dist) - epsilon))
 
     if not losses:
@@ -77,12 +82,31 @@ def text_concept_consistency_loss(
     return torch.stack(losses).mean()
 
 
-def _phrase_image_distribution(attention: torch.Tensor, token_indices: torch.Tensor) -> torch.Tensor:
-    phrase_attention = attention[:, token_indices].mean(dim=-1)
-    if phrase_attention.shape[0] > 1:
-        phrase_attention = phrase_attention[1:]
-    phrase_attention = phrase_attention.clamp_min(0)
+def _phrase_image_distribution(
+    attention: torch.Tensor,
+    token_indices: torch.Tensor,
+    attention_layout: str,
+) -> torch.Tensor | None:
+    if attention_layout == "image_to_text":
+        valid = token_indices[token_indices < attention.shape[-1]]
+        if valid.numel() == 0:
+            return None
+        phrase_attention = attention[:, valid].mean(dim=-1)
+    else:
+        valid = token_indices[token_indices < attention.shape[0]]
+        if valid.numel() == 0:
+            return None
+        phrase_attention = attention[valid, :].mean(dim=0)
+    phrase_attention = _maybe_drop_cls_token(phrase_attention).clamp_min(0)
     return phrase_attention / phrase_attention.sum().clamp_min(1e-8)
+
+
+def _maybe_drop_cls_token(phrase_attention: torch.Tensor) -> torch.Tensor:
+    if phrase_attention.ndim != 1:
+        raise ValueError("Expected a 1D phrase attention vector over image tokens.")
+    if phrase_attention.shape[0] > 2:
+        return phrase_attention[1:]
+    return phrase_attention
 
 
 def _jensen_shannon_divergence(first: torch.Tensor, second: torch.Tensor) -> torch.Tensor:

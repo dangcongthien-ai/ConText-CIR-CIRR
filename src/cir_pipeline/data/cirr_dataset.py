@@ -63,6 +63,7 @@ class CIRRDataset(Dataset):
         self.noun_phrase_parser = noun_phrase_parser
         self.root = Path(data_cfg.root)
         self.metadata_root = Path(data_cfg.metadata_root)
+        self.noun_phrase_cache = self._load_noun_phrase_cache()
 
         self.image_splits: dict[str, str] = self._load_image_split()
         self.image_names = list(self.image_splits.keys())
@@ -77,6 +78,106 @@ class CIRRDataset(Dataset):
             self.samples = self._load_relative_samples()
         else:
             raise ValueError(f"Unsupported CIRR mode: {mode}")
+
+    def _phrase_cache_candidates(self) -> list[Path]:
+        backend = str(getattr(self.data_cfg, "noun_phrase_backend", "none") or "none")
+        if backend == "none":
+            return []
+        base_name = f"cirr_{self.split}_{backend}.json"
+        candidates: list[Path] = []
+        cache_dir = getattr(self.data_cfg, "noun_phrase_cache_dir", None)
+        if cache_dir:
+            candidates.append(Path(cache_dir) / base_name)
+        legacy_dir = Path("outputs") / "noun_phrases"
+        legacy_path = legacy_dir / base_name
+        if legacy_path not in candidates:
+            candidates.append(legacy_path)
+        return candidates
+
+    def _payload_phrase_extractor(self, payload: dict[str, Any]) -> str | None:
+        extractor = payload.get("noun_phrase_extractor")
+        if extractor:
+            return str(extractor)
+        samples = payload.get("samples")
+        if isinstance(samples, list) and samples:
+            sample_extractor = samples[0].get("phrase_extractor")
+            if sample_extractor:
+                return str(sample_extractor)
+        return None
+
+    def _should_use_noun_phrase_cache(self) -> bool:
+        return self.mode == "relative" and bool(getattr(self.data_cfg, "use_exported_noun_phrases", True))
+
+    def _cache_backend_matches(self, path: Path, payload: dict[str, Any]) -> bool:
+        backend = str(payload.get("backend") or "")
+        expected_backend = str(getattr(self.data_cfg, "noun_phrase_backend", "none") or "none")
+        if not backend or expected_backend in {"auto", backend}:
+            return True
+        warnings.warn(
+            f"Ignoring noun phrase cache {path}: backend {backend!r} does not match config {expected_backend!r}."
+        )
+        return False
+
+    def _cache_extractor_matches(self, path: Path, payload: dict[str, Any]) -> bool:
+        payload_extractor = self._payload_phrase_extractor(payload)
+        expected_extractor = str(getattr(self.data_cfg, "noun_phrase_extractor", "constituency") or "constituency")
+        if not payload_extractor or payload_extractor == expected_extractor:
+            return True
+        warnings.warn(
+            f"Ignoring noun phrase cache {path}: extractor {payload_extractor!r} does not match "
+            f"config {expected_extractor!r}."
+        )
+        return False
+
+    def _cache_rows(self, path: Path, payload: dict[str, Any]) -> list[dict[str, Any]] | None:
+        rows = payload.get("samples")
+        if isinstance(rows, list):
+            return [row for row in rows if isinstance(row, dict)]
+        warnings.warn(f"Ignoring noun phrase cache without 'samples' list: {path}")
+        return None
+
+    def _cache_rows_have_phrase_records(self, path: Path, rows: list[dict[str, Any]]) -> bool:
+        if any("phrase_records" in row for row in rows):
+            return True
+        warnings.warn(
+            f"Ignoring legacy noun phrase cache without phrase_records: {path}. "
+            "Re-export noun phrases before training CL+CC."
+        )
+        return False
+
+    def _cache_index(self, rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        cache: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            pair_id = row.get("pair_id")
+            if pair_id is None:
+                continue
+            cache[str(pair_id)] = row
+        return cache
+
+    def _cache_payload_to_index(self, path: Path, payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        if not self._cache_backend_matches(path, payload):
+            return {}
+        if not self._cache_extractor_matches(path, payload):
+            return {}
+        rows = self._cache_rows(path, payload)
+        if rows is None or not self._cache_rows_have_phrase_records(path, rows):
+            return {}
+        return self._cache_index(rows)
+
+    def _load_noun_phrase_cache(self) -> dict[str, dict[str, Any]]:
+        if not self._should_use_noun_phrase_cache():
+            return {}
+        for path in self._phrase_cache_candidates():
+            if not path.exists():
+                continue
+            payload = read_json(path)
+            if not isinstance(payload, dict):
+                warnings.warn(f"Ignoring noun phrase cache with unexpected format: {path}")
+                continue
+            cache = self._cache_payload_to_index(path, payload)
+            if cache:
+                return cache
+        return {}
 
     def _load_image_split(self) -> dict[str, str]:
         path = self.metadata_root / "image_splits" / f"split.rc2.{self.split}.json"
@@ -189,43 +290,66 @@ class CIRRDataset(Dataset):
         image = Image.open(path).convert("RGB")
         return self.transform(image) if self.transform else image
 
-    def __getitem__(self, index: int) -> dict[str, Any]:
-        sample = dict(self.samples[index])
-        if self.mode == "gallery":
-            image_name = sample["image_name"]
-            sample.update(
-                {
-                    "image": self._load_image(image_name),
-                    "image_path": str(self.resolve_image_path(image_name)),
-                    "split": self.split,
-                }
-            )
-            return sample
-
-        caption = sample["caption"]
-        parse_result = (
-            self.noun_phrase_parser.analyze(caption)
-            if self.noun_phrase_parser is not None and caption
-            else None
+    def _gallery_sample(self, sample: dict[str, Any]) -> dict[str, Any]:
+        image_name = sample["image_name"]
+        sample.update(
+            {
+                "image": self._load_image(image_name),
+                "image_path": str(self.resolve_image_path(image_name)),
+                "split": self.split,
+            }
         )
-        noun_phrases = parse_result.noun_phrases if parse_result is not None else []
+        return sample
+
+    def _cached_phrase_metadata(self, sample: dict[str, Any]) -> dict[str, Any] | None:
+        cache_row = self.noun_phrase_cache.get(str(sample.get("pair_id")))
+        if cache_row is None:
+            return None
+        return {
+            "noun_phrases": list(cache_row.get("noun_phrases") or []),
+            "phrase_records": list(cache_row.get("phrase_records") or []),
+            "parser_warnings": list(cache_row.get("parser_warnings") or []),
+            "phrase_extractor": cache_row.get("phrase_extractor"),
+            "edit_actions": list(cache_row.get("edit_actions") or []),
+        }
+
+    def _parsed_phrase_metadata(self, caption: str) -> dict[str, Any]:
+        parse_result = self.noun_phrase_parser.analyze(caption) if self.noun_phrase_parser is not None and caption else None
+        return {
+            "noun_phrases": parse_result.noun_phrases if parse_result is not None else [],
+            "phrase_records": [record.to_dict() for record in parse_result.phrase_records] if parse_result is not None else [],
+            "parser_warnings": list(parse_result.parser_warnings) if parse_result is not None else [],
+            "phrase_extractor": parse_result.phrase_extractor if parse_result is not None else None,
+            "edit_actions": list(parse_result.edit_actions) if parse_result is not None else [],
+        }
+
+    def _relative_phrase_metadata(self, sample: dict[str, Any]) -> dict[str, Any]:
+        cached = self._cached_phrase_metadata(sample)
+        if cached is not None:
+            return cached
+        return self._parsed_phrase_metadata(sample["caption"])
+
+    def _relative_sample(self, sample: dict[str, Any]) -> dict[str, Any]:
+        phrase_metadata = self._relative_phrase_metadata(sample)
         sample.update(
             {
                 "reference_image": self._load_image(sample["reference_name"]),
                 "reference_path": str(self.resolve_image_path(sample["reference_name"])),
                 "target_image": self._load_image(sample["target_name"]) if sample["target_name"] else None,
-                "target_path": str(self.resolve_image_path(sample["target_name"]))
-                if sample["target_name"]
-                else None,
-                "noun_phrases": noun_phrases,
-                "phrase_records": [record.to_dict() for record in parse_result.phrase_records]
-                if parse_result is not None
-                else [],
-                "parser_warnings": list(parse_result.parser_warnings) if parse_result is not None else [],
-                "phrase_extractor": parse_result.phrase_extractor if parse_result is not None else None,
-                "edit_actions": list(parse_result.edit_actions) if parse_result is not None else [],
+                "target_path": str(self.resolve_image_path(sample["target_name"])) if sample["target_name"] else None,
+                "noun_phrases": phrase_metadata["noun_phrases"],
+                "phrase_records": phrase_metadata["phrase_records"],
+                "parser_warnings": phrase_metadata["parser_warnings"],
+                "phrase_extractor": phrase_metadata["phrase_extractor"],
+                "edit_actions": phrase_metadata["edit_actions"],
                 "np_spans": None,
                 "split": self.split,
             }
         )
         return sample
+
+    def __getitem__(self, index: int) -> dict[str, Any]:
+        sample = dict(self.samples[index])
+        if self.mode == "gallery":
+            return self._gallery_sample(sample)
+        return self._relative_sample(sample)

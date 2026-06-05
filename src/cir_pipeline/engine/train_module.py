@@ -109,19 +109,43 @@ class CIRLightningModule(pl.LightningModule if pl else torch.nn.Module):
         if not text_cc_inputs.iso_texts:
             return query_out["embeddings"].new_zeros(()), 0
 
+        query_cc_out = self._forward_text_cc_query(batch["reference_image"], captions, query_out)
         iso_images = batch["reference_image"][
             torch.tensor(text_cc_inputs.sample_indices, device=batch["reference_image"].device)
         ]
-        iso_out = self.model.forward_with_attention(iso_images, text_cc_inputs.iso_texts)
+        iso_out = self._forward_text_cc_iso(iso_images, text_cc_inputs.iso_texts)
         loss_cc = text_concept_consistency_loss(
-            query_out["attention_maps"],
+            query_cc_out["attention_maps"],
             iso_out["attention_maps"],
             text_cc_inputs.full_token_indices,
             text_cc_inputs.iso_token_indices,
             text_cc_inputs.sample_indices,
-            epsilon=self.cfg.loss.epsilon_cc,
+            self.cfg.loss.epsilon_cc,
+            str(query_cc_out.get("attention_layout", "image_to_text")),
         )
         return loss_cc, len(text_cc_inputs.iso_texts)
+
+    def _text_cc_attention_direction(self) -> str:
+        return str(getattr(self.cfg.loss, "text_cc_attention_direction", "text_to_image"))
+
+    def _forward_text_cc_query(
+        self,
+        reference_images: torch.Tensor,
+        captions: list[str],
+        query_out: dict[str, Any],
+    ) -> dict[str, Any]:
+        if self._text_cc_attention_direction() == "image_to_text":
+            return query_out
+        return self.model.forward_text_cc_attention(reference_images, captions)
+
+    def _forward_text_cc_iso(
+        self,
+        iso_images: torch.Tensor,
+        iso_texts: list[str],
+    ) -> dict[str, Any]:
+        if self._text_cc_attention_direction() == "image_to_text":
+            return self.model.forward_with_attention(iso_images, iso_texts)
+        return self.model.forward_text_cc_attention(iso_images, iso_texts)
 
     def _build_text_cc_inputs(
         self,
@@ -429,7 +453,8 @@ def load_cir_module_from_checkpoint(
     checkpoint = _torch_load_checkpoint(checkpoint_path, map_location)
     state_dict = _extract_state_dict(checkpoint, checkpoint_path)
     module = CIRLightningModule(cfg)
-    module.load_state_dict(_migrate_legacy_state_dict_keys(state_dict, module.state_dict()))
+    migrated_state_dict = _migrate_legacy_state_dict_keys(state_dict, module.state_dict())
+    _load_state_dict_with_compatible_missing_keys(module, migrated_state_dict)
     return module
 
 
@@ -450,6 +475,14 @@ def _extract_state_dict(checkpoint: Any, checkpoint_path: str) -> dict[str, torc
     return state_dict
 
 
+_LEGACY_VISION_DOUBLE_PREFIX = "model.encoders.vision_model.vision_model."
+_LEGACY_VISION_SINGLE_PREFIX = "model.encoders.vision_model."
+_LEGACY_TEXT_DOUBLE_PREFIX = "model.encoders.text_model.text_model."
+_LEGACY_TEXT_SINGLE_PREFIX = "model.encoders.text_model."
+_CLIPMODEL_VISION_PREFIX = "model.encoders.clip_model.vision_model."
+_CLIPMODEL_TEXT_PREFIX = "model.encoders.clip_model.text_model."
+_OPTIONAL_NEW_PREFIXES = ("model.cc_fusion.",)
+
 def _migrate_legacy_state_dict_keys(
     state_dict: dict[str, torch.Tensor],
     target_state_dict: dict[str, torch.Tensor] | None = None,
@@ -459,15 +492,29 @@ def _migrate_legacy_state_dict_keys(
         _replace_state_dict_prefixes(
             state_dict,
             {
-                "model.encoders.vision_model.vision_model.": "model.encoders.vision_model.",
-                "model.encoders.text_model.text_model.": "model.encoders.text_model.",
+                _LEGACY_VISION_DOUBLE_PREFIX: _LEGACY_VISION_SINGLE_PREFIX,
+                _LEGACY_TEXT_DOUBLE_PREFIX: _LEGACY_TEXT_SINGLE_PREFIX,
             },
         ),
         _replace_state_dict_prefixes(
             state_dict,
             {
-                "model.encoders.vision_model.": "model.encoders.vision_model.vision_model.",
-                "model.encoders.text_model.": "model.encoders.text_model.text_model.",
+                _LEGACY_VISION_SINGLE_PREFIX: _LEGACY_VISION_DOUBLE_PREFIX,
+                _LEGACY_TEXT_SINGLE_PREFIX: _LEGACY_TEXT_DOUBLE_PREFIX,
+            },
+        ),
+        _replace_state_dict_prefixes(
+            state_dict,
+            {
+                _LEGACY_VISION_DOUBLE_PREFIX: _CLIPMODEL_VISION_PREFIX,
+                _LEGACY_TEXT_DOUBLE_PREFIX: _CLIPMODEL_TEXT_PREFIX,
+            },
+        ),
+        _replace_state_dict_prefixes(
+            state_dict,
+            {
+                _LEGACY_VISION_SINGLE_PREFIX: _CLIPMODEL_VISION_PREFIX,
+                _LEGACY_TEXT_SINGLE_PREFIX: _CLIPMODEL_TEXT_PREFIX,
             },
         ),
     ]
@@ -491,3 +538,19 @@ def _replace_state_dict_prefixes(
                 break
         migrated[new_key] = value
     return migrated
+
+
+def _load_state_dict_with_compatible_missing_keys(
+    module: CIRLightningModule,
+    state_dict: dict[str, torch.Tensor],
+) -> None:
+    incompatible = module.load_state_dict(state_dict, strict=False)
+    missing = [key for key in incompatible.missing_keys if not key.startswith(_OPTIONAL_NEW_PREFIXES)]
+    unexpected = list(incompatible.unexpected_keys)
+    if missing or unexpected:
+        problems = []
+        if missing:
+            problems.append(f"Missing key(s) in state_dict: {missing}")
+        if unexpected:
+            problems.append(f"Unexpected key(s) in state_dict: {unexpected}")
+        raise RuntimeError("Error(s) in loading state_dict for CIRLightningModule:\n\t" + "\n\t".join(problems))

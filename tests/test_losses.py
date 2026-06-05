@@ -31,8 +31,8 @@ def test_text_cc_returns_zero_without_valid_phrases():
 
 
 def test_text_cc_positive_for_different_attention_maps():
-    full = [torch.tensor([[[[0.9, 0.1], [0.9, 0.1]]]])]
-    iso = [torch.tensor([[[[0.1, 0.9], [0.1, 0.9]]]])]
+    full = [torch.tensor([[[[0.9, 0.1], [0.1, 0.9]]]])]
+    iso = [torch.tensor([[[[0.1, 0.9], [0.9, 0.1]]]])]
     loss = text_concept_consistency_loss(
         full,
         iso,
@@ -40,5 +40,20 @@ def test_text_cc_positive_for_different_attention_maps():
         isolated_token_indices=[[0]],
         sample_indices=[0],
         epsilon=0.0,
+    )
+    assert loss.item() > 0.0
+
+
+def test_text_cc_positive_for_text_to_image_attention_maps():
+    full = [torch.tensor([[[[0.9, 0.1, 0.7, 0.2], [0.2, 0.3, 0.5, 0.0]]]])]
+    iso = [torch.tensor([[[[0.1, 0.9, 0.2, 0.7], [0.2, 0.3, 0.5, 0.0]]]])]
+    loss = text_concept_consistency_loss(
+        full,
+        iso,
+        full_token_indices=[[0]],
+        isolated_token_indices=[[0]],
+        sample_indices=[0],
+        epsilon=0.0,
+        attention_layout="text_to_image",
     )
     assert loss.item() > 0.0

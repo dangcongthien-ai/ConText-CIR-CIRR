@@ -154,3 +154,49 @@ def test_dataset_includes_parser_metadata(tmp_path):
     assert sample["edit_actions"][0]["action"] == "make"
     assert sample["parser_warnings"] == ["used_test_parser"]
     assert sample["phrase_extractor"] == "test"
+
+
+def test_dataset_prefers_exported_noun_phrase_cache(tmp_path):
+    cfg = _tiny_cfg(tmp_path)
+    cache_dir = tmp_path / "noun_phrases"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cfg.data.noun_phrase_backend = "stanza"
+    cfg.data.noun_phrase_extractor = "constituency_minimal_np"
+    cfg.data.noun_phrase_cache_dir = str(cache_dir)
+    _write_json(
+        cache_dir / "cirr_train_stanza.json",
+        {
+            "dataset": "cirr",
+            "split": "train",
+            "backend": "stanza",
+            "noun_phrase_extractor": "constituency_minimal_np",
+            "samples": [
+                {
+                    "pair_id": 1,
+                    "noun_phrases": ["cached red square"],
+                    "phrase_records": [
+                        {
+                            "text": "cached red square",
+                            "confidence": 0.95,
+                            "extractor": "constituency_minimal_np",
+                        }
+                    ],
+                    "parser_warnings": ["loaded_from_cache"],
+                    "phrase_extractor": "constituency_minimal_np",
+                    "edit_actions": [{"action": "make", "object": "square"}],
+                }
+            ],
+        },
+    )
+
+    class ExplodingParser:
+        def analyze(self, caption: str) -> CaptionParseResult:
+            raise AssertionError(f"Parser should not run when cache exists: {caption}")
+
+    dataset = CIRRDataset(cfg.data, "train", "relative", transform=None, noun_phrase_parser=ExplodingParser())
+    sample = dataset[0]
+    assert sample["noun_phrases"] == ["cached red square"]
+    assert sample["phrase_records"][0]["text"] == "cached red square"
+    assert sample["parser_warnings"] == ["loaded_from_cache"]
+    assert sample["phrase_extractor"] == "constituency_minimal_np"
+    assert sample["edit_actions"][0]["action"] == "make"

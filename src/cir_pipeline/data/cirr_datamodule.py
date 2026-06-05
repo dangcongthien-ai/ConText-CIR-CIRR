@@ -37,9 +37,18 @@ class CIRRDataModule(pl.LightningDataModule if pl else object):
         self.val_dataset: CIRRDataset | None = None
         self.test_dataset: CIRRDataset | None = None
 
+    def _build_transform(self, train: bool) -> object:
+        return build_clip_transform(
+            None,
+            train,
+            self.cfg.model.backbone,
+            getattr(self.cfg.data, "image_transform", "clip"),
+            float(getattr(self.cfg.data, "target_pad_ratio", 1.25)),
+        )
+
     def setup(self, stage: str | None = None) -> None:
-        train_tf = build_clip_transform(train=True)
-        eval_tf = build_clip_transform(train=False)
+        train_tf = self._build_transform(train=True)
+        eval_tf = self._build_transform(train=False)
         if stage in {None, "fit"}:
             self.train_dataset = CIRRDataset(
                 self.cfg.data, "train", "relative", train_tf, self.noun_parser
@@ -88,7 +97,7 @@ class CIRRDataModule(pl.LightningDataModule if pl else object):
             self.cfg.data,
             split,
             "relative",
-            build_clip_transform(train=False),
+            self._build_transform(train=False),
             None,
         )
 
@@ -97,6 +106,6 @@ class CIRRDataModule(pl.LightningDataModule if pl else object):
             self.cfg.data,
             split,
             "gallery",
-            build_clip_transform(train=False),
+            self._build_transform(train=False),
             None,
         )
