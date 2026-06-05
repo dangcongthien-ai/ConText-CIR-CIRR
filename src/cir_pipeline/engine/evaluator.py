@@ -85,21 +85,61 @@ def encode_queries(
     return torch.cat(embeddings, dim=0), meta
 
 
-@torch.no_grad()
-def evaluate_retrieval(
-    model,
-    relative_dataset: CIRRDataset,
-    gallery_dataset: CIRRDataset,
-    batch_size: int,
-    num_workers: int,
-    device: torch.device | str,
+def _reference_name_to_index(gallery_names: list[str]) -> dict[str, int]:
+    return {name: idx for idx, name in enumerate(gallery_names)}
+
+
+def _candidate_pool_indices(row_scores: np.ndarray, top_k: int) -> np.ndarray:
+    if top_k <= 0 or top_k >= row_scores.shape[0]:
+        return np.arange(row_scores.shape[0], dtype=np.int64)
+    return np.argpartition(-row_scores, top_k - 1)[:top_k]
+
+
+def apply_reference_penalty_rerank(
+    base_scores: np.ndarray,
+    gallery_embeddings: torch.Tensor,
+    gallery_names: list[str],
+    reference_names: list[str],
+    reference_penalty_weight: float = 0.0,
+    reference_penalty_top_k: int = 50,
+) -> np.ndarray:
+    if reference_penalty_weight <= 0:
+        return base_scores
+
+    gallery_np = gallery_embeddings.detach().cpu().numpy().astype("float32", copy=False)
+    name_to_index = _reference_name_to_index(gallery_names)
+    reranked_scores = base_scores.copy()
+
+    for query_idx, reference_name in enumerate(reference_names):
+        reference_idx = name_to_index.get(str(reference_name))
+        if reference_idx is None:
+            continue
+        candidate_indices = _candidate_pool_indices(base_scores[query_idx], reference_penalty_top_k)
+        if candidate_indices.size == 0:
+            continue
+        reference_scores = gallery_np[reference_idx] @ gallery_np[candidate_indices].T
+        reranked_scores[query_idx, candidate_indices] -= reference_penalty_weight * reference_scores
+    return reranked_scores
+
+
+def evaluate_retrieval_from_embeddings(
+    query_embeddings: torch.Tensor,
+    gallery_embeddings: torch.Tensor,
+    gallery_names: list[str],
+    meta: dict[str, list[Any]],
     top_k: int = 50,
+    reference_penalty_weight: float = 0.0,
+    reference_penalty_top_k: int = 50,
 ) -> EvaluationResult:
-    gallery_emb, gallery_names, _ = encode_gallery(
-        model, gallery_dataset, batch_size, num_workers, device
+    base_scores = (query_embeddings @ gallery_embeddings.t()).numpy()
+    scores = apply_reference_penalty_rerank(
+        base_scores,
+        gallery_embeddings,
+        gallery_names,
+        [str(name) for name in meta["reference_name"]],
+        reference_penalty_weight=reference_penalty_weight,
+        reference_penalty_top_k=reference_penalty_top_k,
     )
-    query_emb, meta = encode_queries(model, relative_dataset, batch_size, num_workers, device)
-    scores = (query_emb @ gallery_emb.t()).numpy()
 
     ranked_all: list[list[str]] = []
     predictions: dict[str, list[str]] = {}
@@ -121,4 +161,33 @@ def evaluate_retrieval(
     )
     metrics["num_gallery_images"] = float(len(gallery_names))
     metrics["num_queries"] = float(len(ranked_all))
+    metrics["reference_penalty_weight"] = float(reference_penalty_weight)
+    metrics["reference_penalty_top_k"] = float(reference_penalty_top_k)
     return EvaluationResult(metrics, predictions, subset_predictions, gallery_names)
+
+
+@torch.no_grad()
+def evaluate_retrieval(
+    model,
+    relative_dataset: CIRRDataset,
+    gallery_dataset: CIRRDataset,
+    batch_size: int,
+    num_workers: int,
+    device: torch.device | str,
+    top_k: int = 50,
+    reference_penalty_weight: float = 0.0,
+    reference_penalty_top_k: int = 50,
+) -> EvaluationResult:
+    gallery_emb, gallery_names, _ = encode_gallery(
+        model, gallery_dataset, batch_size, num_workers, device
+    )
+    query_emb, meta = encode_queries(model, relative_dataset, batch_size, num_workers, device)
+    return evaluate_retrieval_from_embeddings(
+        query_emb,
+        gallery_emb,
+        gallery_names,
+        meta,
+        top_k=top_k,
+        reference_penalty_weight=reference_penalty_weight,
+        reference_penalty_top_k=reference_penalty_top_k,
+    )
