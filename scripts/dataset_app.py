@@ -31,7 +31,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a CIRR dataset visualization UI.")
     parser.add_argument("--config", default="configs/cirr_context_cir_cl_cc.yaml")
     parser.add_argument("--splits", nargs="+", choices=["train", "val", "test1"], default=["train", "val", "test1"])
-    parser.add_argument("--limit", type=int, default=300)
+    parser.add_argument("--limit", type=int, default=2000)
     parser.add_argument("--host", default="0.0.0.0", help="Bind host. Use 0.0.0.0 to open the UI to other machines.")
     parser.add_argument("--port", type=int, default=8002)
     return parser.parse_args()
